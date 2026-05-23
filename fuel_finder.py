@@ -34,6 +34,22 @@ NSW_FUEL_API_KEY = st.sidebar.text_input(
     help="Used to pull official live pump prices. Get from: https://www.fuelcheck.nsw.gov.au/api"
 )
 
+# Show API status in sidebar
+with st.sidebar:
+    st.divider()
+    st.subheader("📊 API Status")
+    col1, col2 = st.columns(2)
+    with col1:
+        if GOOGLE_MAPS_API_KEY:
+            st.success("✅ Google Maps")
+        else:
+            st.warning("⚠️ No Google Maps key")
+    with col2:
+        if NSW_FUEL_API_KEY:
+            st.success("✅ NSW FuelCheck")
+        else:
+            st.info("ℹ️ Demo Mode (Test Data)")
+
 # Fallback coordinates if live mobile telemetry hasn't refreshed yet
 if 'user_lat' not in st.session_state:
     st.session_state.user_lat = -34.397  # Fairy Meadow / Wollongong area baseline
@@ -58,14 +74,19 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
     """
     
     # Fallback test data when API key is not provided
-    if not api_key:
+    if not api_key or api_key.strip() == "":
         logger.info("No NSW FuelCheck API key provided. Using fallback test data.")
-        return [
+        st.info("🧪 **Demo Mode**: Using test data for Wollongong area. Add your NSW FuelCheck API key in the sidebar for live data.")
+        
+        fallback_data = [
             {"Station": "Shell Coles Express Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Type": "Direct Trip", "Brand": "Shell"},
             {"Station": "7-Eleven Wollongong North", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Type": "Detour", "Brand": "7-Eleven"},
             {"Station": "Metro Fuel Wollongong", "Price": 1.72, "Latitude": -34.4400, "Longitude": 150.8600, "Type": "Direct Trip", "Brand": "Metro"},
             {"Station": "Caltex Woolworths Corrimal", "Price": 1.81, "Latitude": -34.3810, "Longitude": 150.8910, "Type": "Detour", "Brand": "Caltex"}
         ]
+        
+        logger.info(f"Returning {len(fallback_data)} test stations")
+        return fallback_data
     
     # Official NSW FuelCheck API Endpoint
     url = "https://www.fuelcheck.nsw.gov.au/api/v1/sites/prices/nearby"
@@ -84,7 +105,7 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
     }
     
     try:
-        logger.info(f"Fetching fuel prices for {fuel_type} near ({user_lat}, {user_lon})")
+        logger.info(f"Fetching LIVE fuel prices for {fuel_type} near ({user_lat}, {user_lon})")
         response = requests.get(url, headers=headers, params=params, timeout=10)
         response.raise_for_status()
         
@@ -106,7 +127,7 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
                 logger.warning(f"Error parsing station data: {e}")
                 continue
         
-        logger.info(f"Successfully fetched {len(stations)} stations")
+        logger.info(f"Successfully fetched {len(stations)} live stations")
         return stations
         
     except requests.exceptions.Timeout:
@@ -115,7 +136,11 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
         return []
     except requests.exceptions.HTTPError as e:
         logger.error(f"NSW FuelCheck API HTTP error: {e.response.status_code}")
-        st.error(f"❌ NSW FuelCheck API Error: {e.response.status_code} - Check your API key")
+        st.error(f"❌ NSW FuelCheck API Error: {e.response.status_code}")
+        if e.response.status_code == 401:
+            st.warning("Invalid API key. Check your NSW FuelCheck token.")
+        elif e.response.status_code == 403:
+            st.warning("Access denied. Your API key may not have permission.")
         return []
     except Exception as e:
         logger.error(f"Unexpected error fetching fuel prices: {e}")
@@ -145,7 +170,7 @@ def get_driving_distance_and_time(origin_lat, origin_lon, dest_lat, dest_lon, ap
     """
     
     # Fallback: Haversine formula for straight-line distance
-    if not api_key:
+    if not api_key or api_key.strip() == "":
         logger.info("No Google Maps API key. Using Haversine fallback calculation.")
         R = 6371.0  # Earth radius in km
         dlat = math.radians(dest_lat - origin_lat)
@@ -328,7 +353,7 @@ with st.sidebar.expander("📡 API Setup Guide"):
 
 # --- COMPLETELY AUTOMATED CORE ENGINE ---
 if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", use_container_width=True):
-    with st.spinner("Fetching live market pricing data via FuelCheck feeds..."):
+    with st.spinner("Fetching market pricing data..."):
         # Auto-query the pricing matrix 
         raw_stations = fetch_live_fuelcheck_prices(
             st.session_state.user_lat, 
@@ -338,8 +363,14 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", use_co
         )
     
     if not raw_stations:
-        st.error("❌ No stations returned from the automated live feed registry. Check your API keys or try a different location.")
-        st.info("💡 Tip: Ensure your NSW FuelCheck API key is valid and you have internet connectivity.")
+        st.error("❌ No stations returned. Something went wrong.")
+        st.info("💡 **Troubleshooting:**")
+        st.write("""
+        - Check your NSW FuelCheck API key is entered in the sidebar
+        - Ensure internet connectivity
+        - Try clicking '📍 Detect My Location' to update coordinates
+        - Without API key, demo data should load automatically
+        """)
     else:
         results = []
         with st.spinner("Calculating optimized routes..."):
