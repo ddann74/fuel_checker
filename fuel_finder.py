@@ -21,17 +21,17 @@ st.sidebar.header("🔑 API Credentials")
 
 # Support both sidebar input and environment variables
 GOOGLE_MAPS_API_KEY = st.sidebar.text_input(
-    "Google Maps API Key", 
+    "Google Maps API Key (Optional)", 
     type="password", 
     value=os.getenv("GOOGLE_MAPS_API_KEY", ""),
-    help="Required for actual road route distances. Get from: https://developers.google.com/maps"
+    help="Optional - for accurate driving distances. Leave blank to use estimated distances."
 )
 
 NSW_FUEL_API_KEY = st.sidebar.text_input(
     "NSW FuelCheck API Token", 
     type="password", 
     value=os.getenv("NSW_FUEL_API_KEY", ""),
-    help="Used to pull official live pump prices. Get from: https://www.fuelcheck.nsw.gov.au/api"
+    help="Required for live fuel prices. Get from: https://www.fuelcheck.nsw.gov.au/api"
 )
 
 # Show API status in sidebar
@@ -40,15 +40,15 @@ with st.sidebar:
     st.subheader("📊 API Status")
     col1, col2 = st.columns(2)
     with col1:
-        if GOOGLE_MAPS_API_KEY:
+        if GOOGLE_MAPS_API_KEY and GOOGLE_MAPS_API_KEY.strip():
             st.success("✅ Google Maps")
         else:
-            st.warning("⚠️ No Google Maps key")
+            st.info("ℹ️ Estimated Distances")
     with col2:
-        if NSW_FUEL_API_KEY:
+        if NSW_FUEL_API_KEY and NSW_FUEL_API_KEY.strip():
             st.success("✅ NSW FuelCheck")
         else:
-            st.info("ℹ️ Demo Mode (Test Data)")
+            st.warning("⚠️ Demo Mode (Test Data)")
 
 # Fallback coordinates if live mobile telemetry hasn't refreshed yet
 if 'user_lat' not in st.session_state:
@@ -73,7 +73,7 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
     - radius: Search radius in kilometers
     """
     
-    # Fallback test data when API key is not provided
+    # Fallback test data - use if no valid API key
     if not api_key or api_key.strip() == "":
         logger.info("No NSW FuelCheck API key provided. Using fallback test data.")
         st.info("🧪 **Demo Mode**: Using test data for Wollongong area. Add your NSW FuelCheck API key in the sidebar for live data.")
@@ -127,25 +127,56 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
                 logger.warning(f"Error parsing station data: {e}")
                 continue
         
-        logger.info(f"Successfully fetched {len(stations)} live stations")
-        return stations
+        if stations:
+            logger.info(f"Successfully fetched {len(stations)} live stations")
+            st.success(f"✅ Fetched {len(stations)} live stations from NSW FuelCheck API")
+            return stations
+        else:
+            logger.warning("NSW API returned empty stations list. Falling back to demo data.")
+            st.warning("No stations found from API. Using demo data instead.")
+            return get_demo_data()
         
     except requests.exceptions.Timeout:
         logger.error("NSW FuelCheck API request timed out")
-        st.error("⏱️ NSW FuelCheck API timed out. Please check your connection.")
-        return []
+        st.error("⏱️ NSW FuelCheck API timed out. Falling back to demo data.")
+        return get_demo_data()
     except requests.exceptions.HTTPError as e:
         logger.error(f"NSW FuelCheck API HTTP error: {e.response.status_code}")
-        st.error(f"❌ NSW FuelCheck API Error: {e.response.status_code}")
+        st.error(f"❌ NSW FuelCheck API Error: {e.response.status_code}. Falling back to demo data.")
         if e.response.status_code == 401:
             st.warning("Invalid API key. Check your NSW FuelCheck token.")
         elif e.response.status_code == 403:
             st.warning("Access denied. Your API key may not have permission.")
-        return []
+        return get_demo_data()
     except Exception as e:
         logger.error(f"Unexpected error fetching fuel prices: {e}")
-        st.error(f"❌ Error fetching fuel prices: {str(e)}")
-        return []
+        st.error(f"❌ Error fetching fuel prices. Falling back to demo data.")
+        return get_demo_data()
+
+
+def get_demo_data():
+    """Return demo/test data for Wollongong area."""
+    return [
+        {"Station": "Shell Coles Express Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Type": "Direct Trip", "Brand": "Shell"},
+        {"Station": "7-Eleven Wollongong North", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Type": "Detour", "Brand": "7-Eleven"},
+        {"Station": "Metro Fuel Wollongong", "Price": 1.72, "Latitude": -34.4400, "Longitude": 150.8600, "Type": "Direct Trip", "Brand": "Metro"},
+        {"Station": "Caltex Woolworths Corrimal", "Price": 1.81, "Latitude": -34.3810, "Longitude": 150.8910, "Type": "Detour", "Brand": "Caltex"}
+    ]
+
+
+def calculate_haversine_distance(origin_lat, origin_lon, dest_lat, dest_lon):
+    """Calculate approximate distance using Haversine formula."""
+    R = 6371.0  # Earth radius in km
+    dlat = math.radians(dest_lat - origin_lat)
+    dlon = math.radians(dest_lon - origin_lon)
+    a = (math.sin(dlat / 2)**2 + 
+         math.cos(math.radians(origin_lat)) * 
+         math.cos(math.radians(dest_lat)) * 
+         math.sin(dlon / 2)**2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    distance_km = R * c
+    duration_mins = (distance_km / 60.0) * 60
+    return distance_km, duration_mins
 
 
 def get_driving_distance_and_time(origin_lat, origin_lon, dest_lat, dest_lon, api_key=None):
@@ -155,37 +186,13 @@ def get_driving_distance_and_time(origin_lat, origin_lon, dest_lat, dest_lon, ap
     Google Maps Distance Matrix API Documentation:
     https://developers.google.com/maps/documentation/distance-matrix
     
-    Endpoint: GET https://maps.googleapis.com/maps/api/distancematrix/json
-    Query Parameters:
-    - origins: Starting point (latitude,longitude)
-    - destinations: Destination point (latitude,longitude)
-    - mode: driving, walking, bicycling, transit
-    - key: API key
-    
-    Response includes:
-    - distance: In meters
-    - duration: In seconds
-    
     Falls back to Haversine formula if API key not provided.
     """
     
-    # Fallback: Haversine formula for straight-line distance
+    # Fallback: Haversine formula for straight-line distance (always available)
     if not api_key or api_key.strip() == "":
-        logger.info("No Google Maps API key. Using Haversine fallback calculation.")
-        R = 6371.0  # Earth radius in km
-        dlat = math.radians(dest_lat - origin_lat)
-        dlon = math.radians(dest_lon - origin_lon)
-        a = (math.sin(dlat / 2)**2 + 
-             math.cos(math.radians(origin_lat)) * 
-             math.cos(math.radians(dest_lat)) * 
-             math.sin(dlon / 2)**2)
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        distance_km = R * c
-        
-        # Estimate time: assume 60 km/h average
-        duration_mins = (distance_km / 60.0) * 60
-        
-        return distance_km, duration_mins
+        logger.info("No Google Maps API key. Using Haversine formula for distance estimation.")
+        return calculate_haversine_distance(origin_lat, origin_lon, dest_lat, dest_lon)
     
     # Google Maps Distance Matrix API
     url = "https://maps.googleapis.com/maps/api/distancematrix/json"
@@ -206,34 +213,28 @@ def get_driving_distance_and_time(origin_lat, origin_lon, dest_lat, dest_lon, ap
         
         if data['status'] != 'OK':
             logger.warning(f"Google Maps API status: {data['status']}")
-            st.warning(f"⚠️ Google Maps API: {data['status']}")
-            return 0.0, 0.0
+            return calculate_haversine_distance(origin_lat, origin_lon, dest_lat, dest_lon)
         
         element = data['rows'][0]['elements'][0]
         
         if element['status'] == 'OK':
             distance_km = element['distance']['value'] / 1000.0
             duration_mins = element['duration']['value'] / 60.0
-            logger.info(f"Distance: {distance_km:.1f} km, Duration: {duration_mins:.0f} mins")
+            logger.info(f"Distance: {distance_km:.1f} km (via Google Maps), Duration: {duration_mins:.0f} mins")
             return distance_km, duration_mins
         else:
             logger.warning(f"Distance Matrix element status: {element['status']}")
-            return 0.0, 0.0
+            return calculate_haversine_distance(origin_lat, origin_lon, dest_lat, dest_lon)
             
     except requests.exceptions.Timeout:
-        logger.error("Google Maps API request timed out")
-        st.warning("⏱️ Google Maps API timed out")
-        return 0.0, 0.0
+        logger.error("Google Maps API request timed out. Using Haversine.")
+        return calculate_haversine_distance(origin_lat, origin_lon, dest_lat, dest_lon)
     except requests.exceptions.HTTPError as e:
-        logger.error(f"Google Maps API HTTP error: {e.response.status_code}")
-        if e.response.status_code == 403:
-            st.error("❌ Google Maps API: Invalid API key or insufficient permissions")
-        else:
-            st.error(f"❌ Google Maps API Error: {e.response.status_code}")
-        return 0.0, 0.0
+        logger.error(f"Google Maps API HTTP error: {e.response.status_code}. Using Haversine.")
+        return calculate_haversine_distance(origin_lat, origin_lon, dest_lat, dest_lon)
     except Exception as e:
         logger.error(f"Unexpected error in distance calculation: {e}")
-        return 0.0, 0.0
+        return calculate_haversine_distance(origin_lat, origin_lon, dest_lat, dest_lon)
 
 
 def get_current_location():
@@ -331,24 +332,26 @@ st.metric(
 # Add info box about API setup
 with st.sidebar.expander("📡 API Setup Guide"):
     st.markdown("""
-    ### Get Your API Keys:
+    ### API Keys (Optional):
     
-    **Google Maps API:**
+    **NSW FuelCheck API (Recommended):**
+    1. Visit [FuelCheck NSW](https://www.fuelcheck.nsw.gov.au/api)
+    2. Register for API access
+    3. Get your Bearer token
+    4. Paste token above for **live fuel prices**
+    
+    **Google Maps API (Optional):**
     1. Go to [Google Cloud Console](https://console.cloud.google.com)
     2. Create a new project
     3. Enable Distance Matrix API
     4. Create API key credentials
-    5. Paste key above
+    5. Paste key above for **actual driving distances**
     
-    **NSW FuelCheck API:**
-    1. Visit [FuelCheck NSW](https://www.fuelcheck.nsw.gov.au/api)
-    2. Register for API access
-    3. Get your Bearer token
-    4. Paste token above
-    
-    **IP Geolocation (Automatic):**
-    - Uses ip-api.com (free, 45 req/min limit)
-    - Click "📍 Detect My Location" to update
+    ### How It Works:
+    - 🧪 **Demo Mode**: Works without any API keys using test data
+    - 🌏 **Distances**: Uses estimated distances if no Google Maps key
+    - 📍 **Location**: Uses IP geolocation (free, 45 req/min)
+    - ✅ **Progressive Enhancement**: Add keys anytime to upgrade!
     """)
 
 # --- COMPLETELY AUTOMATED CORE ENGINE ---
@@ -366,10 +369,9 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", use_co
         st.error("❌ No stations returned. Something went wrong.")
         st.info("💡 **Troubleshooting:**")
         st.write("""
-        - Check your NSW FuelCheck API key is entered in the sidebar
         - Ensure internet connectivity
         - Try clicking '📍 Detect My Location' to update coordinates
-        - Without API key, demo data should load automatically
+        - Demo data should load automatically if no API key provided
         """)
     else:
         results = []
