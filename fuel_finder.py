@@ -48,7 +48,7 @@ with st.sidebar:
         if NSW_FUEL_API_KEY and NSW_FUEL_API_KEY.strip():
             st.success("✅ NSW FuelCheck")
         else:
-            st.warning("⚠️ Demo Mode (Test Data)")
+            st.info("ℹ️ Demo Mode (Test Data)")
 
 # Fallback coordinates if live mobile telemetry hasn't refreshed yet
 if 'user_lat' not in st.session_state:
@@ -56,6 +56,16 @@ if 'user_lat' not in st.session_state:
     st.session_state.user_lon = 150.893
 
 # --- AUTOMATED API DATA FETCHERS ---
+
+def get_demo_data():
+    """Return demo/test data for Wollongong area."""
+    return [
+        {"Station": "Shell Coles Express Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Type": "Direct Trip", "Brand": "Shell"},
+        {"Station": "7-Eleven Wollongong North", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Type": "Detour", "Brand": "7-Eleven"},
+        {"Station": "Metro Fuel Wollongong", "Price": 1.72, "Latitude": -34.4400, "Longitude": 150.8600, "Type": "Direct Trip", "Brand": "Metro"},
+        {"Station": "Caltex Woolworths Corrimal", "Price": 1.81, "Latitude": -34.3810, "Longitude": 150.8910, "Type": "Detour", "Brand": "Caltex"}
+    ]
+
 
 def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=None):
     """
@@ -77,16 +87,9 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
     if not api_key or api_key.strip() == "":
         logger.info("No NSW FuelCheck API key provided. Using fallback test data.")
         st.info("🧪 **Demo Mode**: Using test data for Wollongong area. Add your NSW FuelCheck API key in the sidebar for live data.")
-        
-        fallback_data = [
-            {"Station": "Shell Coles Express Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Type": "Direct Trip", "Brand": "Shell"},
-            {"Station": "7-Eleven Wollongong North", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Type": "Detour", "Brand": "7-Eleven"},
-            {"Station": "Metro Fuel Wollongong", "Price": 1.72, "Latitude": -34.4400, "Longitude": 150.8600, "Type": "Direct Trip", "Brand": "Metro"},
-            {"Station": "Caltex Woolworths Corrimal", "Price": 1.81, "Latitude": -34.3810, "Longitude": 150.8910, "Type": "Detour", "Brand": "Caltex"}
-        ]
-        
-        logger.info(f"Returning {len(fallback_data)} test stations")
-        return fallback_data
+        demo = get_demo_data()
+        logger.info(f"Returning {len(demo)} test stations")
+        return demo
     
     # Official NSW FuelCheck API Endpoint
     url = "https://www.fuelcheck.nsw.gov.au/api/v1/sites/prices/nearby"
@@ -110,6 +113,7 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
         response.raise_for_status()
         
         data = response.json()
+        logger.info(f"API Response: {data}")
         stations = []
         
         for stn in data.get('sites', []):
@@ -144,24 +148,15 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
         logger.error(f"NSW FuelCheck API HTTP error: {e.response.status_code}")
         st.error(f"❌ NSW FuelCheck API Error: {e.response.status_code}. Falling back to demo data.")
         if e.response.status_code == 401:
-            st.warning("Invalid API key. Check your NSW FuelCheck token.")
+            st.warning("🔑 Invalid API key. Check your NSW FuelCheck token.")
         elif e.response.status_code == 403:
-            st.warning("Access denied. Your API key may not have permission.")
+            st.warning("🚫 Access denied. Your API key may not have permission.")
         return get_demo_data()
     except Exception as e:
         logger.error(f"Unexpected error fetching fuel prices: {e}")
-        st.error(f"❌ Error fetching fuel prices. Falling back to demo data.")
+        st.error(f"❌ Error fetching fuel prices: {str(e)}")
+        st.error(f"Debug: {type(e).__name__}: {str(e)}")
         return get_demo_data()
-
-
-def get_demo_data():
-    """Return demo/test data for Wollongong area."""
-    return [
-        {"Station": "Shell Coles Express Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Type": "Direct Trip", "Brand": "Shell"},
-        {"Station": "7-Eleven Wollongong North", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Type": "Detour", "Brand": "7-Eleven"},
-        {"Station": "Metro Fuel Wollongong", "Price": 1.72, "Latitude": -34.4400, "Longitude": 150.8600, "Type": "Direct Trip", "Brand": "Metro"},
-        {"Station": "Caltex Woolworths Corrimal", "Price": 1.81, "Latitude": -34.3810, "Longitude": 150.8910, "Type": "Detour", "Brand": "Caltex"}
-    ]
 
 
 def calculate_haversine_distance(origin_lat, origin_lon, dest_lat, dest_lon):
@@ -365,7 +360,11 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", use_co
             NSW_FUEL_API_KEY
         )
     
-    if not raw_stations:
+    # Log what we got
+    logger.info(f"Raw stations received: {len(raw_stations) if raw_stations else 0}")
+    st.write(f"Debug: Stations count = {len(raw_stations) if raw_stations else 'None'}")
+    
+    if raw_stations is None or len(raw_stations) == 0:
         st.error("❌ No stations returned. Something went wrong.")
         st.info("💡 **Troubleshooting:**")
         st.write("""
@@ -418,7 +417,7 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", use_co
                     "Navigate": nav_url
                 })
         
-        if results:
+        if results and len(results) > 0:
             df_res = pd.DataFrame(results).sort_values(by="Total Cost").reset_index(drop=True)
             
             best_cost = df_res.iloc[0]["Total Cost"]
