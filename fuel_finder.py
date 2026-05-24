@@ -10,6 +10,7 @@ st.title("⛽ Automated Fuel Optimizer")
 
 # --- FUNCTIONS ---
 def search_address(searchterm: str):
+    """Free OpenStreetMap search for autocomplete."""
     if not searchterm or len(searchterm) < 3: return []
     url = "https://nominatim.openstreetmap.org/search"
     try:
@@ -19,13 +20,17 @@ def search_address(searchterm: str):
     except: return []
 
 def geocode_address(address_string):
+    """Geocodes an address string to latitude/longitude."""
     url = "https://nominatim.openstreetmap.org/search"
     try:
-        response = requests.get(url, params={"q": searchterm, "format": "json", "limit": 1}, 
-                                headers={"User-Agent": "FuelFinderApp/1.0"}, timeout=5)
-        if response.status_code == 200 and response.json():
-            return float(response.json()[0]["lat"]), float(response.json()[0]["lon"])
-    except: return None
+        response = requests.get(url, params={"q": address_string, "format": "json", "limit": 1}, 
+                                headers={"User-Agent": "FuelFinderApp/1.0"}, timeout=10)
+        data = response.json()
+        if response.status_code == 200 and data:
+            return float(data[0]["lat"]), float(data[0]["lon"])
+        return None
+    except:
+        return None
 
 def get_live_tomtom_distance(o_lat, o_lon, d_lat, d_lon):
     R = 6371.0
@@ -47,12 +52,12 @@ with st.expander("🚗 Vehicle Settings & Route", expanded=True):
 
 if st.button("🚀 Find On-Route Stations"):
     if not manual_dest:
-        st.warning("Please select a destination.")
+        st.warning("Please select a destination from the search list.")
         st.stop()
         
     dest_coords = geocode_address(manual_dest)
     if not dest_coords:
-        st.error("❌ Could not resolve destination.")
+        st.error("❌ Could not resolve destination coordinates. Please try a more specific address.")
         st.stop()
         
     user_lat, user_lon = -34.397, 150.893
@@ -67,7 +72,7 @@ if st.button("🚀 Find On-Route Stations"):
         leg_b = get_live_tomtom_distance(row['Latitude'], row['Longitude'], dest_coords[0], dest_coords[1])
         detour_km = max(0.0, (leg_a + leg_b) - base_dist)
         
-        # Only include if detour is under 5km
+        # Filter: Only include stations where the detour is <= 5km
         if detour_km <= 5.0:
             total_trip_cost = (liters_to_fill * row['Price']) + (((detour_km * fuel_economy) / 100.0) * row['Price'])
             results.append({
