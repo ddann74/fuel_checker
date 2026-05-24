@@ -25,15 +25,6 @@ def get_location_js():
     </script>
     """
 
-def search_address(searchterm: str):
-    if not searchterm or len(searchterm) < 3: return []
-    url = "https://nominatim.openstreetmap.org/search"
-    try:
-        response = requests.get(url, params={"q": searchterm, "format": "json", "limit": 5}, 
-                                headers={"User-Agent": "FuelFinderApp/1.0"}, timeout=3)
-        return [res["display_name"] for res in response.json()]
-    except: return []
-
 def geocode_address(address_string):
     url = "https://nominatim.openstreetmap.org/search"
     try:
@@ -63,16 +54,23 @@ with st.expander("🚗 Vehicle Settings & Route", expanded=True):
     col1, col2 = st.columns(2)
     with col1:
         fuel_economy = st.number_input("Fuel Economy (L/100km)", value=8.5)
-        tank_capacity = st.number_input("Tank Capacity (L)", value=60)
+        tank_capacity = st.number_input("Total Tank Capacity (L)", value=60)
         trip_mode = st.radio("Trip Mode", ["One Way", "Return"], horizontal=True)
     with col2:
-        manual_dest = st_searchbox(search_address, label="Destination", placeholder="Enter destination...")
         fuel_gauge_pct = st.slider("Current Fuel (%)", 0, 100, 25, step=25)
-        # Added Target Savings input
+        # NEW: Override volume calculation
+        manual_volume = st.number_input("Fuel Required (L) - Optional", min_value=0.0, value=0.0)
         target_savings = st.number_input("Target Savings ($)", min_value=0.0, value=2.0, step=0.5)
-    
-    liters_to_fill = int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
+
+    # Logic for liters to fill
+    if manual_volume > 0:
+        liters_to_fill = manual_volume
+    else:
+        liters_to_fill = int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
+        
     multiplier = 2 if trip_mode == "Return" else 1
+
+manual_dest = st_searchbox(lambda s: [], label="Destination", placeholder="Enter destination...")
 
 if st.button("🚀 Find On-Route Stations"):
     if not manual_dest:
@@ -116,14 +114,6 @@ if st.button("🚀 Find On-Route Stations"):
         df = pd.DataFrame(results).sort_values("Total Cost")
         df["Net Savings"] = df["Total Cost"].max() - df["Total Cost"]
         
-        # Highlight/Filter based on target savings
-        df_achievable = df[df["Net Savings"] >= target_savings]
-        
-        if not df_achievable.empty:
-            st.success(f"✅ Found {len(df_achievable)} stations meeting your ${target_savings} savings goal!")
-        else:
-            st.warning(f"⚠️ No stations found that meet your ${target_savings} savings goal.")
-            
         df_display = df.copy()
         df_display["Net Savings"] = df_display["Net Savings"].map("${:.2f}".format)
         df_display["Total Cost"] = df_display["Total Cost"].map("${:.2f}".format)
