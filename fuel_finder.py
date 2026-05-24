@@ -103,10 +103,11 @@ if st.button("🚀 Find All Stations (Ranked by Savings)"):
         total_trip_cost = (liters_to_fill * row['Price']) + (((detour_km * multiplier * fuel_economy) / 100.0) * row['Price'])
         results.append({
             "Station": row['Station'], "Brand": row['Brand'], 
+            "Net Savings": (0.0), # Placeholder for calculation
             "Detour (km)": round(detour_km, 1),
             "On-Route": "✅ Yes" if detour_km <= 5.0 else "❌ No",
-            "Total Cost": total_trip_cost,
             "Real Price/L": total_trip_cost / liters_to_fill if liters_to_fill > 0 else row['Price'],
+            "Total Cost": total_trip_cost,
             "Navigate": f"waze://?ll={row['Latitude']},{row['Longitude']}&navigate=yes"
         })
     
@@ -119,8 +120,9 @@ if st.button("🚀 Find All Stations (Ranked by Savings)"):
     df_display["Total Cost"] = df_display["Total Cost"].map("${:.2f}".format)
     df_display["Real Price/L"] = df_display["Real Price/L"].map("${:.3f}".format)
     
+    # Column ordering updated: Station, Brand, Net Savings, Detour(km), On-Route, Real Price/L, Total Cost, Navigate
     st.dataframe(
-        df_display[["Station", "Brand", "Detour (km)", "On-Route", "Real Price/L", "Net Savings", "Total Cost", "Navigate"]], 
+        df_display[["Station", "Brand", "Net Savings", "Detour (km)", "On-Route", "Real Price/L", "Total Cost", "Navigate"]], 
         column_config={"Navigate": st.column_config.LinkColumn("🗺️ Action", display_text="Map")},
         hide_index=True
     )
