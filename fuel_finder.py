@@ -50,6 +50,60 @@ with st.sidebar:
         else:
             st.info("ℹ️ Demo Mode (Test Data)")
 
+# Add API Test Button
+with st.sidebar:
+    st.divider()
+    if st.button("🧪 Test NSW FuelCheck API", use_container_width=True):
+        if not NSW_FUEL_API_KEY or NSW_FUEL_API_KEY.strip() == "":
+            st.warning("⚠️ No API key entered. Please add your NSW FuelCheck API token first.")
+        else:
+            with st.spinner("Testing API connection..."):
+                try:
+                    url = "https://www.fuelcheck.nsw.gov.au/api/v1/sites/prices/nearby"
+                    headers = {
+                        "Authorization": f"Bearer {NSW_FUEL_API_KEY}",
+                        "Content-Type": "application/json",
+                        "User-Agent": "FuelOptimizer/1.0"
+                    }
+                    params = {
+                        "latitude": -34.397,
+                        "longitude": 150.893,
+                        "fuelType": "E10",
+                        "radius": 15
+                    }
+                    
+                    response = requests.get(url, headers=headers, params=params, timeout=10)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        sites_count = len(data.get('sites', []))
+                        st.success(f"✅ **API is Working!**")
+                        st.write(f"Found **{sites_count}** fuel stations")
+                        if sites_count > 0:
+                            st.write("Sample station:")
+                            sample = data['sites'][0]
+                            st.json({
+                                "name": sample.get('name'),
+                                "price": sample.get('price'),
+                                "brand": sample.get('brand')
+                            })
+                    elif response.status_code == 401:
+                        st.error("❌ **Authentication Failed (401)**")
+                        st.write("Your API key is invalid or expired. Check your NSW FuelCheck token.")
+                    elif response.status_code == 403:
+                        st.error("❌ **Access Denied (403)**")
+                        st.write("Your API key doesn't have permission. Check your account settings.")
+                    else:
+                        st.error(f"❌ **API Error ({response.status_code})**")
+                        st.write(f"Response: {response.text}")
+                        
+                except requests.exceptions.Timeout:
+                    st.error("❌ **Connection Timeout**")
+                    st.write("The API took too long to respond. Check your internet connection.")
+                except Exception as e:
+                    st.error(f"❌ **Error: {type(e).__name__}**")
+                    st.write(f"Details: {str(e)}")
+
 # Fallback coordinates if live mobile telemetry hasn't refreshed yet
 if 'user_lat' not in st.session_state:
     st.session_state.user_lat = -34.397  # Fairy Meadow / Wollongong area baseline
@@ -362,12 +416,12 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", use_co
     
     # Log what we got
     logger.info(f"Raw stations received: {len(raw_stations) if raw_stations else 0}")
-    st.write(f"Debug: Stations count = {len(raw_stations) if raw_stations else 'None'}")
     
     if raw_stations is None or len(raw_stations) == 0:
         st.error("❌ No stations returned. Something went wrong.")
         st.info("💡 **Troubleshooting:**")
         st.write("""
+        - Click 🧪 **Test NSW FuelCheck API** in the sidebar to check if your key works
         - Ensure internet connectivity
         - Try clicking '📍 Detect My Location' to update coordinates
         - Demo data should load automatically if no API key provided
