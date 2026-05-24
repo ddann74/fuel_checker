@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 HARDCODED_TOMTOM_API_KEY = "PASTE_YOUR_FREE_TOMTOM_KEY_HERE"
 HARDCODED_NSW_API_KEY = "1MYSRAx5yvqHUZc6VGtxix6oMA2qgfRT"
 HARDCODED_NSW_API_SECRET = "BMvWacw15Et8uFGF"
-HARDCODED_NSW_AUTH_HEADER = "Basic MU1ZU1JBeDV5dnFIVVpjNlZHdHhpeDZvTUEycWdmUlQ6Qk12V2Fj准TUEycWdmUlQ6Qk12V2FjdzE1RXQ4dUZHRg=="
+HARDCODED_NSW_AUTH_HEADER = "Basic MU1ZU1JBeDV5dnFIVVpjNlZHdHhpeDZvTUEycWdmUlQ6Qk12V2FjdzE1RXQ4dUZHRg=="
 # ==============================================================================
 
 # Mobile-first page configuration
@@ -69,7 +69,7 @@ with st.sidebar:
 
 # Geocoding service using OpenStreetMap Nominatim API
 def geocode_address(address_string):
-    """Converts a user typed location or address text into GPS coordinates."""
+    """Converts any custom typed location or address text into GPS coordinates."""
     if not address_string:
         return None
     url = "https://nominatim.openstreetmap.org/search"
@@ -84,14 +84,6 @@ def geocode_address(address_string):
     except Exception as e:
         logger.error(f"Geocoding lookup error: {e}")
     return None
-
-# Map destinations to coordinates around Wollongong
-DESTINATION_LOOKUP = {
-    "Wollongong CBD": {"lat": -34.4278, "lon": 150.8931},
-    "University of Wollongong": {"lat": -34.4068, "lon": 150.8787},
-    "Corrimal Shopping Centre": {"lat": -34.3844, "lon": 150.8953},
-    "Shellharbour (Longer Drive)": {"lat": -34.5581, "lon": 150.8549}
-}
 
 # --- AUTOMATED API DATA FETCHERS ---
 def get_demo_data():
@@ -190,9 +182,10 @@ def get_live_tomtom_distance(origin_lat, origin_lon, dest_lat, dest_lon, api_key
         return calculate_haversine_fallback(origin_lat, origin_lon, dest_lat, dest_lon)
 
 # --- USER SETTINGS CONTAINER ---
-with st.expander("📍 Location & Route Configuration", expanded=True):
-    # Live Search Input Field for Custom Start Position
-    custom_start_input = st.text_input("📍 Your Current Location / Start Address", value="Fairy Meadow, NSW")
+with st.expander("📍 Custom Location & Route Configurator", expanded=True):
+    # 🔤 Both inputs are now open text boxes! Type anything you want.
+    custom_start_input = st.text_input("📍 Starting Address / Suburb", value="Fairy Meadow, NSW")
+    custom_dest_input = st.text_input("🏁 Final Destination Address / Suburb", value="Wollongong CBD, NSW")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -200,7 +193,6 @@ with st.expander("📍 Location & Route Configuration", expanded=True):
         tank_capacity = st.number_input("Total Tank Capacity (Liters)", min_value=10, value=60, step=5)
     with col2:
         fuel_type_selection = st.selectbox("Select Fuel Type", options=["E10", "U91", "P95", "P98", "Diesel"])
-        planned_dest_name = st.selectbox("Where are you driving to?", options=list(DESTINATION_LOOKUP.keys()))
     
     fuel_gauge_pct = st.slider("Current Fuel Gauge (%)", min_value=0, max_value=100, value=25, step=5)
     liters_to_fill = int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
@@ -208,24 +200,32 @@ with st.expander("📍 Location & Route Configuration", expanded=True):
 
 # --- COMPLETELY AUTOMATED CORE ENGINE ---
 if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", width="stretch"):
-    dest_coords = DESTINATION_LOOKUP[planned_dest_name]
     
-    with st.spinner("Resolving starting address position..."):
-        coords = geocode_address(custom_start_input)
-        if coords:
-            start_lat, start_lon = coords
-            st.success(f"📍 Location Found: {start_lat:.4f}, {start_lon:.4f}")
+    # 1. Resolve typed starting position
+    with st.spinner("Resolving starting position coordinates..."):
+        start_coords = geocode_address(custom_start_input)
+        if start_coords:
+            start_lat, start_lon = start_coords
         else:
-            st.warning("⚠️ Location not found. Defaulting to Fairy Meadow base profile.")
+            st.warning("⚠️ Start address not found. Defaulting to Fairy Meadow.")
             start_lat, start_lon = -34.397, 150.893
+
+    # 2. Resolve typed final destination position
+    with st.spinner("Resolving final destination coordinates..."):
+        dest_coords = geocode_address(custom_dest_input)
+        if dest_coords:
+            dest_lat, dest_lon = dest_coords
+            st.success(f"🗺️ Route Armed: ({start_lat:.3f}, {start_lon:.3f}) ➔ ({dest_lat:.3f}, {dest_lon:.3f})")
+        else:
+            st.error("❌ Destination address could not be found. Please try typing another nearby suburb.")
+            st.stop()
 
     with st.spinner("Analyzing routing detours and market pricing fields..."):
         raw_stations = fetch_live_fuelcheck_prices(fuel_type_selection, start_lat, start_lon)
         
-        # 1. Base Case: Get direct distance from custom start location straight to destination
+        # Base Case: Get direct driving route from your typed start to your typed destination
         base_direct_km = get_live_tomtom_distance(
-            start_lat, start_lon, 
-            dest_coords["lat"], dest_coords["lon"], HARDCODED_TOMTOM_API_KEY
+            start_lat, start_lon, dest_lat, dest_lon, HARDCODED_TOMTOM_API_KEY
         )
     
     if raw_stations is None or len(raw_stations) == 0:
@@ -239,20 +239,20 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", width=
             stn_lon = float(row['Longitude'])
             brand = row.get('Brand', 'Unknown')
             
-            # 2. Detour Leg A: Custom location to the fuel station
+            # Detour Leg A: Typed start position to the fuel station
             leg_a_km = get_live_tomtom_distance(
                 start_lat, start_lon, stn_lat, stn_lon, HARDCODED_TOMTOM_API_KEY
             )
-            # 3. Detour Leg B: Fuel station to the final destination
+            # Detour Leg B: Fuel station to the typed final destination
             leg_b_km = get_live_tomtom_distance(
-                stn_lat, stn_lon, dest_coords["lat"], dest_coords["lon"], HARDCODED_TOMTOM_API_KEY
+                stn_lat, stn_lon, dest_lat, dest_lon, HARDCODED_TOMTOM_API_KEY
             )
             
-            # Detour calculations
+            # Detour math calculations
             total_detour_route_km = leg_a_km + leg_b_km
             added_detour_km = max(0.0, total_detour_route_km - base_direct_km)
             
-            # Financial calculations
+            # Cost evaluations
             fuel_burned_on_detour = (added_detour_km * fuel_economy) / 100.0
             cost_of_detour_travel = fuel_burned_on_detour * price
             cost_at_pump = liters_to_fill * price
