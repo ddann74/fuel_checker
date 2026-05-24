@@ -18,31 +18,60 @@ with st.expander("📍 Location & Route Configurator", expanded=True):
     liters_to_fill = int(tank_cap * (1 - (fuel_pct / 100.0)))
 
 if st.button("🚀 Auto-Scan & Optimize"):
-    # (Mock calculation loop logic here)
-    # Assume results list is populated...
+    # --- CALCULATION LOGIC ---
+    try:
+        # Initialize results list (replace with actual API calls or calculations)
+        results = []
+        
+        # TODO: Add your fuel station lookup logic here
+        # Example structure for each result:
+        # {
+        #     "Station": "Station Name",
+        #     "Brand": "Fuel Brand",
+        #     "Net Savings": 5.50,
+        #     "True Cost/L": 1.85,
+        #     "Total Trip Cost": 15.45,
+        #     "Added Detour": 2.5,
+        #     "Navigate": "https://waze.com/..."
+        # }
+        
+        if not results:
+            st.warning("⚠️ No fuel stations found. Please check your locations and try again.")
+        else:
+            # After sorting the dataframe by "Total Trip Cost":
+            df = pd.DataFrame(results).sort_values("Total Trip Cost")
+            
+            # 🌟 NEW: Extract the Best Result for Color-Coded Highlight
+            best_option = df.iloc[0]
+            
+            # Highlight the winner in a specific colored metric container
+            st.subheader("🏆 Your Best Deal")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(label="Best Station", value=best_option.get('Station', 'N/A'))
+            with col2:
+                net_savings = best_option.get('Net Savings', 0)
+                st.metric(label="Net Savings", value=f"${net_savings:.2f}", delta="Optimal")
+            
+            st.divider()
+            st.write("### All Available Options")
+            
+            # --- TABLE DISPLAY ---
+            display_df = df.copy()
+            
+            # Ensure all required columns exist
+            required_columns = ["Station", "Brand", "Net Savings", "True Cost/L", "Total Trip Cost", "Added Detour", "Navigate"]
+            available_columns = [col for col in required_columns if col in display_df.columns]
+            
+            if available_columns:
+                st.dataframe(
+                    display_df[available_columns],
+                    column_config={"Navigate": st.column_config.LinkColumn("🏎️ Action", display_text="Open Waze")},
+                    hide_index=True
+                )
+            else:
+                st.error("❌ Error: Required data columns are missing from results.")
     
-    # After sorting the dataframe by "Total Trip Cost":
-    df = pd.DataFrame(results).sort_values("Total Trip Cost")
-    
-    # 🌟 NEW: Extract the Best Result for Color-Coded Highlight
-    best_option = df.iloc[0]
-    
-    # Highlight the winner in a specific colored metric container
-    st.subheader("🏆 Your Best Deal")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric(label="Best Station", value=best_option['Station'])
-    with col2:
-        st.metric(label="Net Savings", value=f"${best_option['Net Savings']:.2f}", delta="Optimal")
-    
-    st.divider()
-    st.write("### All Available Options")
-    
-    # --- TABLE DISPLAY ---
-    display_df = df.copy()
-    # (Formatting logic remains the same)
-    st.dataframe(
-        display_df[["Station", "Brand", "Net Savings", "True Cost/L", "Total Trip Cost", "Added Detour", "Navigate"]],
-        column_config={"Navigate": st.column_config.LinkColumn("🏎️ Action", display_text="Open Waze")},
-        hide_index=True
-    )
+    except Exception as e:
+        st.error(f"❌ An error occurred: {str(e)}")
+        st.info("Please verify your input values and try again.")
