@@ -3,14 +3,35 @@ import pandas as pd
 import requests
 import math
 from streamlit_searchbox import st_searchbox
+import streamlit.components.v1 as components
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Fuel Tracker Mobile", page_icon="⛽", layout="centered")
 st.title("⛽ Automated Fuel Optimizer")
 
 # --- FUNCTIONS ---
+def get_location_js():
+    """JavaScript to fetch user GPS coordinates."""
+    return """
+    <button id="btn" onclick="getLocation()">📍 Detect My Location</button>
+    <p id="status"></p>
+    <script>
+        function getLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        const url = window.location.href + (window.location.href.includes('?') ? '&' : '?') + 
+                                    'lat=' + pos.coords.latitude + '&lon=' + pos.coords.longitude;
+                        window.location.href = url;
+                    },
+                    (err) => { document.getElementById("status").innerHTML = "Error: " + err.message; }
+                );
+            }
+        }
+    </script>
+    """
+
 def search_address(searchterm: str):
-    """Free OpenStreetMap search for autocomplete."""
     if not searchterm or len(searchterm) < 3: return []
     url = "https://nominatim.openstreetmap.org/search"
     try:
@@ -20,7 +41,6 @@ def search_address(searchterm: str):
     except: return []
 
 def geocode_address(address_string):
-    """Geocodes an address string to latitude/longitude."""
     url = "https://nominatim.openstreetmap.org/search"
     try:
         response = requests.get(url, params={"q": address_string, "format": "json", "limit": 1}, 
@@ -29,8 +49,7 @@ def geocode_address(address_string):
         if response.status_code == 200 and data:
             return float(data[0]["lat"]), float(data[0]["lon"])
         return None
-    except:
-        return None
+    except: return None
 
 def get_live_tomtom_distance(o_lat, o_lon, d_lat, d_lon):
     R = 6371.0
@@ -39,6 +58,14 @@ def get_live_tomtom_distance(o_lat, o_lon, d_lat, d_lon):
     return (R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))) * 1.3
 
 # --- UI INTERFACE ---
+# Check if GPS data exists in the URL
+query_params = st.query_params
+user_lat = float(query_params.get("lat", -34.397))
+user_lon = float(query_params.get("lon", 150.893))
+
+st.write(f"📍 Current Coordinates: {user_lat:.4f}, {user_lon:.4f}")
+components.html(get_location_js(), height=50)
+
 with st.expander("🚗 Vehicle Settings & Route", expanded=True):
     col1, col2 = st.columns(2)
     with col1:
@@ -52,15 +79,13 @@ with st.expander("🚗 Vehicle Settings & Route", expanded=True):
 
 if st.button("🚀 Find On-Route Stations"):
     if not manual_dest:
-        st.warning("Please select a destination from the search list.")
+        st.warning("Please select a destination.")
         st.stop()
-        
     dest_coords = geocode_address(manual_dest)
     if not dest_coords:
-        st.error("❌ Could not resolve destination coordinates. Please try a more specific address.")
+        st.error("❌ Could not resolve destination.")
         st.stop()
         
-    user_lat, user_lon = -34.397, 150.893
     raw_stations = [{"Station": "Shell Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Brand": "Shell"},
                     {"Station": "7-Eleven Wollongong", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Brand": "7-Eleven"}]
     
@@ -72,7 +97,6 @@ if st.button("🚀 Find On-Route Stations"):
         leg_b = get_live_tomtom_distance(row['Latitude'], row['Longitude'], dest_coords[0], dest_coords[1])
         detour_km = max(0.0, (leg_a + leg_b) - base_dist)
         
-        # Filter: Only include stations where the detour is <= 5km
         if detour_km <= 5.0:
             total_trip_cost = (liters_to_fill * row['Price']) + (((detour_km * fuel_economy) / 100.0) * row['Price'])
             results.append({
