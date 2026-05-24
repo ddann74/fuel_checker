@@ -68,6 +68,8 @@ with st.expander("🚗 Vehicle Settings & Route", expanded=True):
     with col2:
         manual_dest = st_searchbox(search_address, label="Destination", placeholder="Enter destination...")
         fuel_gauge_pct = st.slider("Current Fuel (%)", 0, 100, 25, step=25)
+        # Added Target Savings input
+        target_savings = st.number_input("Target Savings ($)", min_value=0.0, value=2.0, step=0.5)
     
     liters_to_fill = int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
     multiplier = 2 if trip_mode == "Return" else 1
@@ -99,7 +101,6 @@ if st.button("🚀 Find On-Route Stations"):
         detour_km = max(0.0, (leg_a + leg_b) - base_dist)
         
         if detour_km <= 5.0:
-            # Scale distance fuel by multiplier
             total_trip_cost = (liters_to_fill * row['Price']) + (((detour_km * multiplier * fuel_economy) / 100.0) * row['Price'])
             results.append({
                 "Station": row['Station'], "Brand": row['Brand'], 
@@ -115,6 +116,14 @@ if st.button("🚀 Find On-Route Stations"):
         df = pd.DataFrame(results).sort_values("Total Cost")
         df["Net Savings"] = df["Total Cost"].max() - df["Total Cost"]
         
+        # Highlight/Filter based on target savings
+        df_achievable = df[df["Net Savings"] >= target_savings]
+        
+        if not df_achievable.empty:
+            st.success(f"✅ Found {len(df_achievable)} stations meeting your ${target_savings} savings goal!")
+        else:
+            st.warning(f"⚠️ No stations found that meet your ${target_savings} savings goal.")
+            
         df_display = df.copy()
         df_display["Net Savings"] = df_display["Net Savings"].map("${:.2f}".format)
         df_display["Total Cost"] = df_display["Total Cost"].map("${:.2f}".format)
