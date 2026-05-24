@@ -53,7 +53,7 @@ def get_live_tomtom_distance(o_lat, o_lon, d_lat, d_lon):
 
 # --- UI INTERFACE ---
 query_params = st.query_params
-user_lat = float(query_params.get("lat", -34.397)) # Default to Fairy Meadow
+user_lat = float(query_params.get("lat", -34.397))
 user_lon = float(query_params.get("lon", 150.893))
 
 st.write(f"📍 Current Location: {user_lat:.4f}, {user_lon:.4f}")
@@ -68,24 +68,22 @@ with st.expander("🚗 Vehicle Settings & Route", expanded=True):
     with col2:
         fuel_gauge_pct = st.slider("Current Fuel (%)", 0, 100, 25, step=25)
         manual_volume = st.number_input("Fuel Required (L) - Optional", min_value=0.0, value=0.0)
-        target_savings = st.number_input("Target Savings ($)", min_value=0.0, value=2.0, step=0.5)
 
     liters_to_fill = manual_volume if manual_volume > 0 else int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
     multiplier = 2 if trip_mode == "Return" else 1
 
 manual_dest = st_searchbox(search_address, label="Destination", placeholder="Enter destination...")
 
-if st.button("🚀 Find On-Route Stations"):
+if st.button("🚀 Find All Stations (Ranked by Savings)"):
     if not manual_dest:
-        st.warning("Please select a destination from the list.")
+        st.warning("Please select a destination.")
         st.stop()
         
     dest_coords = geocode_address(manual_dest)
     if not dest_coords:
-        st.error("❌ Could not resolve destination coordinates.")
+        st.error("❌ Could not resolve destination.")
         st.stop()
         
-    # Updated Station list with Smeaton Grange locations
     raw_stations = [
         {"Station": "Ampol Urbanista", "Price": 1.88, "Latitude": -34.0321, "Longitude": 150.7560, "Brand": "Ampol"},
         {"Station": "Enhance Smeaton Grange", "Price": 1.85, "Latitude": -34.0418, "Longitude": 150.7614, "Brand": "Enhance"},
@@ -102,30 +100,27 @@ if st.button("🚀 Find On-Route Stations"):
         leg_b = get_live_tomtom_distance(row['Latitude'], row['Longitude'], dest_coords[0], dest_coords[1])
         detour_km = max(0.0, (leg_a + leg_b) - base_dist)
         
-        # Increased threshold to 50km to capture Smeaton Grange from Fairy Meadow
-        if detour_km <= 50.0:
-            total_trip_cost = (liters_to_fill * row['Price']) + (((detour_km * multiplier * fuel_economy) / 100.0) * row['Price'])
-            results.append({
-                "Station": row['Station'], "Brand": row['Brand'], 
-                "Detour (km)": round(detour_km, 1),
-                "Total Cost": total_trip_cost,
-                "Real Price/L": total_trip_cost / liters_to_fill if liters_to_fill > 0 else row['Price'],
-                "Navigate": f"waze://?ll={row['Latitude']},{row['Longitude']}&navigate=yes"
-            })
+        total_trip_cost = (liters_to_fill * row['Price']) + (((detour_km * multiplier * fuel_economy) / 100.0) * row['Price'])
+        results.append({
+            "Station": row['Station'], "Brand": row['Brand'], 
+            "Detour (km)": round(detour_km, 1),
+            "On-Route": "✅ Yes" if detour_km <= 5.0 else "❌ No",
+            "Total Cost": total_trip_cost,
+            "Real Price/L": total_trip_cost / liters_to_fill if liters_to_fill > 0 else row['Price'],
+            "Navigate": f"waze://?ll={row['Latitude']},{row['Longitude']}&navigate=yes"
+        })
     
-    if not results:
-        st.error("No stations found.")
-    else:
-        df = pd.DataFrame(results).sort_values("Total Cost")
-        df["Net Savings"] = df["Total Cost"].max() - df["Total Cost"]
-        
-        df_display = df.copy()
-        df_display["Net Savings"] = df_display["Net Savings"].map("${:.2f}".format)
-        df_display["Total Cost"] = df_display["Total Cost"].map("${:.2f}".format)
-        df_display["Real Price/L"] = df_display["Real Price/L"].map("${:.3f}".format)
-        
-        st.dataframe(
-            df_display[["Station", "Brand", "Detour (km)", "Real Price/L", "Net Savings", "Total Cost", "Navigate"]], 
-            column_config={"Navigate": st.column_config.LinkColumn("🗺️ Action", display_text="Map")},
-            hide_index=True
-        )
+    df = pd.DataFrame(results).sort_values("Total Cost")
+    df["Net Savings"] = df["Total Cost"].max() - df["Total Cost"]
+    
+    # Display Formatting
+    df_display = df.copy()
+    df_display["Net Savings"] = df_display["Net Savings"].map("${:.2f}".format)
+    df_display["Total Cost"] = df_display["Total Cost"].map("${:.2f}".format)
+    df_display["Real Price/L"] = df_display["Real Price/L"].map("${:.3f}".format)
+    
+    st.dataframe(
+        df_display[["Station", "Brand", "Detour (km)", "On-Route", "Real Price/L", "Net Savings", "Total Cost", "Navigate"]], 
+        column_config={"Navigate": st.column_config.LinkColumn("🗺️ Action", display_text="Map")},
+        hide_index=True
+    )
