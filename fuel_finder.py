@@ -97,6 +97,7 @@ if st.button("🚀 Find On-Route Stations"):
                 "Station": row['Station'], "Brand": row['Brand'], 
                 "Detour (km)": round(detour_km, 1),
                 "Total Cost": total_trip_cost,
+                "Real Price/L": total_trip_cost / liters_to_fill if liters_to_fill > 0 else row['Price'],
                 "Navigate": f"waze://?ll={row['Latitude']},{row['Longitude']}&navigate=yes"
             })
     
@@ -110,9 +111,10 @@ if st.button("🚀 Find On-Route Stations"):
         df_display = df.copy()
         df_display["Net Savings"] = df_display["Net Savings"].map("${:.2f}".format)
         df_display["Total Cost"] = df_display["Total Cost"].map("${:.2f}".format)
+        df_display["Real Price/L"] = df_display["Real Price/L"].map("${:.3f}".format)
         
         st.dataframe(
-            df_display[["Station", "Brand", "Detour (km)", "Net Savings", "Total Cost", "Navigate"]], 
+            df_display[["Station", "Brand", "Detour (km)", "Real Price/L", "Net Savings", "Total Cost", "Navigate"]], 
             column_config={"Navigate": st.column_config.LinkColumn("🗺️ Action", display_text="Map")},
             hide_index=True
         )
