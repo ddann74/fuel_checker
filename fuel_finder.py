@@ -183,7 +183,6 @@ def get_live_tomtom_distance(origin_lat, origin_lon, dest_lat, dest_lon, api_key
 
 # --- USER SETTINGS CONTAINER ---
 with st.expander("📍 Custom Location & Route Configurator", expanded=True):
-    # 🔤 Both inputs are now open text boxes! Type anything you want.
     custom_start_input = st.text_input("📍 Starting Address / Suburb", value="Fairy Meadow, NSW")
     custom_dest_input = st.text_input("🏁 Final Destination Address / Suburb", value="Wollongong CBD, NSW")
     
@@ -259,7 +258,9 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", width=
             true_total_cost = cost_at_pump + cost_of_detour_travel
             
             effective_ppl = true_total_cost / liters_to_fill if liters_to_fill > 0 else 0
-            nav_url = f"https://www.google.com/maps/search/?api=1&query={stn_lat},{stn_lon}"
+            
+            # 🏎️ DEEP LINK INTERFACE MODIFICATION: Switched from Google to Waze URL routing protocol!
+            nav_url = f"https://waze.com/ul?ll={stn_lat},{stn_lon}&navigate=yes"
                 
             results.append({
                 "Station": stn_name,
@@ -298,7 +299,7 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", width=
             st.dataframe(
                 df_display, 
                 width="stretch",
-                column_config={"Navigate": st.column_config.LinkColumn("🗺️ Action", display_text="Route App")},
+                column_config={"Navigate": st.column_config.LinkColumn("🏎️ Action", display_text="Open Waze")},
                 hide_index=True
             )
 
