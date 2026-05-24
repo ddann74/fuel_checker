@@ -258,8 +258,6 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", width=
             true_total_cost = cost_at_pump + cost_of_detour_travel
             
             effective_ppl = true_total_cost / liters_to_fill if liters_to_fill > 0 else 0
-            
-            # 🏎️ DEEP LINK INTERFACE MODIFICATION: Switched from Google to Waze URL routing protocol!
             nav_url = f"https://waze.com/ul?ll={stn_lat},{stn_lon}&navigate=yes"
                 
             results.append({
@@ -273,11 +271,18 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", width=
             })
         
         if results:
+            # Sort stations from cheapest true cost to most expensive
             df_res = pd.DataFrame(results).sort_values(by="Total Cost").reset_index(drop=True)
-            best_cost = df_res.iloc[0]["Total Cost"]
+            
             worst_cost = df_res.iloc[-1]["Total Cost"]
-            potential_savings = max(0.0, worst_cost - best_cost)
+            best_cost = df_res.iloc[0]["Total Cost"]
+            max_savings = max(0.0, worst_cost - best_cost)
             best_price = df_res.iloc[0]["True $/L"]
+            
+            # 💵 CRITICAL UPGRADE: Calculate Net Savings for EVERY row relative to the worst option!
+            df_res["Net Savings"] = worst_cost - df_res["Total Cost"]
+            # Ensure no minor negative floats due to rounding
+            df_res["Net Savings"] = df_res["Net Savings"].clip(lower=0.0)
             
             st.success(f"🏆 **Automated Recommendation:** {df_res.iloc[0]['Station']}\n\nTrue Cost (With Detour): **${best_price:.3f}/L**")
             
@@ -287,14 +292,17 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", width=
             with sc2:
                 st.metric(label="🚗 Extra Detour KM", value=f"{df_res.iloc[0]['Added Detour']:.2f} km")
             with sc3:
-                st.metric(label="💸 Net Savings", value=f"${potential_savings:.2f}")
+                st.metric(label="💸 Max Net Savings", value=f"${max_savings:.2f}")
             
             df_display = df_res.copy()
             df_display["Price"] = df_display["Price"].map("${:.2f}".format)
             df_display["Added Detour"] = df_display["Added Detour"].map("{:.2f} km".format)
             df_display["True $/L"] = df_display["True $/L"].map("${:.3f}".format)
+            df_display["Net Savings"] = df_display["Net Savings"].map("${:.2f}".format)
             df_display["Total Cost"] = df_display["Total Cost"].map("${:.2f}".format)
-            df_display = df_display[["Station", "Brand", "Price", "Added Detour", "True $/L", "Total Cost", "Navigate"]]
+            
+            # Reordered columns to put Net Savings front and center next to total cost
+            df_display = df_display[["Station", "Brand", "Price", "Added Detour", "Net Savings", "Total Cost", "Navigate"]]
             
             st.dataframe(
                 df_display, 
