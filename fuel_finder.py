@@ -57,6 +57,7 @@ if st.button("🚀 Auto-Scan & Optimize"):
         st.error("❌ Could not find those coordinates.")
         st.stop()
     
+    # Baseline location (Fairy Meadow)
     user_lat, user_lon = -34.397, 150.893
     raw_stations = [{"Station": "Shell Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Brand": "Shell"},
                     {"Station": "7-Eleven Wollongong", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Brand": "7-Eleven"}]
@@ -77,14 +78,13 @@ if st.button("🚀 Auto-Scan & Optimize"):
             "Station": row['Station'], "Brand": row['Brand'], 
             "Total Cost": total_trip_cost,
             "True $/L": total_trip_cost / liters_to_fill,
-            "Navigate": f"https://waze.com/ul?ll={row['Latitude']},{row['Longitude']}&navigate=yes"
+            # Updated to deep link format to trigger Waze app on mobile
+            "Navigate": f"waze://?ll={row['Latitude']},{row['Longitude']}&navigate=yes"
         })
     
-    # Calculate Savings
     df = pd.DataFrame(results).sort_values("Total Cost")
     df["Net Savings"] = df["Total Cost"].max() - df["Total Cost"]
     
-    # Display Formatting
     df_display = df.copy()
     df_display["Net Savings"] = df_display["Net Savings"].map("${:.2f}".format)
     df_display["True $/L"] = df_display["True $/L"].map("${:.3f}".format)
