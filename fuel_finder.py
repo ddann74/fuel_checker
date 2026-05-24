@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 # ==============================================================================
 # 🔑 HARDCODED API CREDENTIALS CONFIGURATION
-# Paste your free TomTom Consumer API Key here to unlock real-time live traffic routing!
+# Paste your free TomTom Consumer API Key here to unlock real-time detour calculations!
 # ==============================================================================
-HARDCODED_TOMTOM_API_KEY = "RoiDwi5Y35NaVKTJEyFTX5VtED45vS2e"
+HARDCODED_TOMTOM_API_KEY = "PASTE_YOUR_FREE_TOMTOM_KEY_HERE"
 HARDCODED_NSW_API_KEY = "1MYSRAx5yvqHUZc6VGtxix6oMA2qgfRT"
 HARDCODED_NSW_API_SECRET = "BMvWacw15Et8uFGF"
 HARDCODED_NSW_AUTH_HEADER = "Basic MU1ZU1JBeDV5dnFIVVpjNlZHdHhpeDZvTUEycWdmUlQ6Qk12V2FjdzE1RXQ4dUZHRg=="
@@ -58,7 +58,7 @@ with st.sidebar:
     col1, col2 = st.columns(2)
     with col1:
         if tomtom_key_active:
-            st.success("✅ TomTom Traffic")
+            st.success("✅ TomTom Detours")
         else:
             st.info("ℹ️ Math Estimations")
     with col2:
@@ -98,10 +98,18 @@ with st.sidebar:
                 except Exception as e:
                     st.error(f"❌ **Error: {type(e).__name__}**")
 
-# Fallback coordinates (Fairy Meadow Baseline Profile)
+# Fallback base coordinates (Fairy Meadow Baseline Profile)
 if 'user_lat' not in st.session_state:
     st.session_state.user_lat = -34.397  
     st.session_state.user_lon = 150.893
+
+# Map destinations to coordinates around Wollongong
+DESTINATION_LOOKUP = {
+    "Wollongong CBD": {"lat": -34.4278, "lon": 150.8931},
+    "University of Wollongong": {"lat": -34.4068, "lon": 150.8787},
+    "Corrimal Shopping Centre": {"lat": -34.3844, "lon": 150.8953},
+    "Shellharbour (Longer Drive)": {"lat": -34.5581, "lon": 150.8549}
+}
 
 # --- AUTOMATED API DATA FETCHERS ---
 def get_demo_data():
@@ -156,7 +164,7 @@ def fetch_live_fuelcheck_prices(fuel_type="E10"):
                     lat_dist = abs(meta['lat'] - st.session_state.user_lat)
                     lon_dist = abs(meta['lon'] - st.session_state.user_lon)
                     
-                    if lat_dist > 0.15 or lon_dist > 0.15: 
+                    if lat_dist > 0.25 or lon_dist > 0.25: 
                         continue
                         
                     parsed_stations.append({
@@ -181,60 +189,57 @@ def calculate_haversine_fallback(origin_lat, origin_lon, dest_lat, dest_lon):
     a = (math.sin(dlat / 2)**2 + math.cos(math.radians(origin_lat)) * math.cos(math.radians(dest_lat)) * math.sin(dlon / 2)**2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     km = (R * c) * 1.3
-    return km, (km / 50.0) * 60.0
+    return km
 
-def get_live_tomtom_routing(origin_lat, origin_lon, dest_lat, dest_lon, api_key=None):
-    """Pings the TomTom Routing API for live, real-time traffic-adjusted travel distance and duration."""
+def get_live_tomtom_distance(origin_lat, origin_lon, dest_lat, dest_lon, api_key=None):
+    """Pings TomTom for active car driving distance between two points."""
     if not api_key or "PASTE_YOUR" in api_key:
         return calculate_haversine_fallback(origin_lat, origin_lon, dest_lat, dest_lon)
         
     url = f"https://api.tomtom.com/routing/1/calculateRoute/{origin_lat},{origin_lon}:{dest_lat},{dest_lon}/json"
-    params = {
-        "key": api_key.strip(),
-        "traffic": "true",
-        "travelMode": "car"
-    }
+    params = {"key": api_key.strip(), "traffic": "true", "travelMode": "car"}
     
     try:
-        response = requests.get(url, params=params, timeout=8)
+        response = requests.get(url, params=params, timeout=6)
         if response.status_code == 200:
-            route_summary = response.json().get('routes', [{}])[0].get('summary', {})
-            
-            # TomTom returns distance in meters and travelTimeInSeconds (includes active real-time traffic delays)
-            distance_km = route_summary.get('lengthInMeters', 0) / 1000.0
-            duration_mins = route_summary.get('travelTimeInSeconds', 0) / 60.0
-            
-            if distance_km > 0:
-                return distance_km, duration_mins
+            return response.json()['routes'][0]['summary']['lengthInMeters'] / 1000.0
         return calculate_haversine_fallback(origin_lat, origin_lon, dest_lat, dest_lon)
     except Exception:
         return calculate_haversine_fallback(origin_lat, origin_lon, dest_lat, dest_lon)
 
 # --- USER SETTINGS CONTAINER ---
-with st.expander("🚗 Vehicle Settings & Targets", expanded=True):
+with st.expander("🚗 Vehicle Settings & Planned Route", expanded=True):
     col1, col2 = st.columns(2)
     with col1:
         fuel_economy = st.number_input("Fuel Economy (L/100km)", min_value=1.0, value=8.5, step=0.1)
-    with col2:
         tank_capacity = st.number_input("Total Tank Capacity (Liters)", min_value=10, value=60, step=5)
+    with col2:
+        fuel_type_selection = st.selectbox("Select Fuel Type", options=["E10", "U91", "P95", "P98", "Diesel"])
+        planned_dest_name = st.selectbox("Where are you driving to?", options=list(DESTINATION_LOOKUP.keys()))
     
     fuel_gauge_pct = st.slider("Current Fuel Gauge (%)", min_value=0, max_value=100, value=25, step=5)
     liters_to_fill = int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
     st.info(f"📋 Target Volume to Fill: **{liters_to_fill} Liters**")
-    
-    fuel_type_selection = st.selectbox("Select Fuel Type", options=["E10", "U91", "P95", "P98", "Diesel"])
 
 # Display live location status
 st.metric(
     label="🛰️ Mobile GPS Telemetry Status", 
     value=f"{st.session_state.user_lat:.4f}, {st.session_state.user_lon:.4f}",
-    delta="Live Traffic Streams Armed" if tomtom_key_active else "Math Estimations (Paste TomTom Key)"
+    delta="Detour Matrix Engine Standby"
 )
 
 # --- COMPLETELY AUTOMATED CORE ENGINE ---
 if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", width="stretch"):
-    with st.spinner("Fetching pricing matrix and real-time traffic corridors..."):
+    dest_coords = DESTINATION_LOOKUP[planned_dest_name]
+    
+    with st.spinner("Analyzing routing detours and market pricing fields..."):
         raw_stations = fetch_live_fuelcheck_prices(fuel_type_selection)
+        
+        # 1. Base Case: Get direct distance from current location straight to destination
+        base_direct_km = get_live_tomtom_distance(
+            st.session_state.user_lat, st.session_state.user_lon, 
+            dest_coords["lat"], dest_coords["lon"], HARDCODED_TOMTOM_API_KEY
+        )
     
     if raw_stations is None or len(raw_stations) == 0:
         st.error("❌ **No Stations Found**")
@@ -247,16 +252,24 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", width=
             stn_lon = float(row['Longitude'])
             brand = row.get('Brand', 'Unknown')
             
-            # Request exact driving distances adjusted for live congestion
-            distance_km, duration_mins = get_live_tomtom_routing(
+            # 2. Detour Leg A: Current location to the fuel station
+            leg_a_km = get_live_tomtom_distance(
                 st.session_state.user_lat, st.session_state.user_lon, stn_lat, stn_lon, HARDCODED_TOMTOM_API_KEY
             )
+            # 3. Detour Leg B: Fuel station to the final destination
+            leg_b_km = get_live_tomtom_distance(
+                stn_lat, stn_lon, dest_coords["lat"], dest_coords["lon"], HARDCODED_TOMTOM_API_KEY
+            )
             
-            total_travel_distance = distance_km * 2.0  
-            fuel_burned = (total_travel_distance * fuel_economy) / 100.0
-            cost_of_travel_fuel = fuel_burned * price
+            # Detour Math equation mapping
+            total_detour_route_km = leg_a_km + leg_b_km
+            added_detour_km = max(0.0, total_detour_route_km - base_direct_km)
+            
+            # Financial overhead calculations
+            fuel_burned_on_detour = (added_detour_km * fuel_economy) / 100.0
+            cost_of_detour_travel = fuel_burned_on_detour * price
             cost_at_pump = liters_to_fill * price
-            true_total_cost = cost_at_pump + cost_of_travel_fuel
+            true_total_cost = cost_at_pump + cost_of_detour_travel
             
             effective_ppl = true_total_cost / liters_to_fill if liters_to_fill > 0 else 0
             nav_url = f"https://www.google.com/maps/search/?api=1&query={stn_lat},{stn_lon}"
@@ -265,7 +278,7 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", width=
                 "Station": stn_name,
                 "Brand": brand,
                 "Price": price,
-                "Distance": distance_km,
+                "Added Detour": added_detour_km,
                 "True $/L": effective_ppl,
                 "Total Cost": true_total_cost,
                 "Navigate": nav_url
@@ -278,27 +291,27 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", width=
             potential_savings = max(0.0, worst_cost - best_cost)
             best_price = df_res.iloc[0]["True $/L"]
             
-            st.success(f"🏆 **Automated Recommendation:** {df_res.iloc[0]['Station']}\n\nTrue Cost: **${best_price:.3f}/L**")
+            st.success(f"🏆 **Automated Recommendation:** {df_res.iloc[0]['Station']}\n\nTrue Cost (With Detour): **${best_price:.3f}/L**")
             
             sc1, sc2, sc3 = st.columns(3)
             with sc1:
-                st.metric(label="💵 Optimized Trip Cost", value=f"${best_cost:.2f}")
+                st.metric(label="💵 Total Trip Cost", value=f"${best_cost:.2f}")
             with sc2:
-                st.metric(label="🚗 Real Drive Distance", value=f"{df_res.iloc[0]['Distance']:.1f} km")
+                st.metric(label="🚗 Extra Detour KM", value=f"{df_res.iloc[0]['Added Detour']:.2f} km")
             with sc3:
-                st.metric(label="💸 Potential Savings", value=f"${potential_savings:.2f}")
+                st.metric(label="💸 Net Savings", value=f"${potential_savings:.2f}")
             
             df_display = df_res.copy()
             df_display["Price"] = df_display["Price"].map("${:.2f}".format)
-            df_display["Distance"] = df_display["Distance"].map("{:.1f} km".format)
+            df_display["Added Detour"] = df_display["Added Detour"].map("{:.2f} km".format)
             df_display["True $/L"] = df_display["True $/L"].map("${:.3f}".format)
             df_display["Total Cost"] = df_display["Total Cost"].map("${:.2f}".format)
-            df_display = df_display[["Station", "Brand", "Price", "Distance", "True $/L", "Total Cost", "Navigate"]]
+            df_display = df_display[["Station", "Brand", "Price", "Added Detour", "True $/L", "Total Cost", "Navigate"]]
             
             st.dataframe(
                 df_display, 
                 width="stretch",
-                column_config={"Navigate": st.column_config.LinkColumn("🗺️ Action", display_text="Open Maps")},
+                column_config={"Navigate": st.column_config.LinkColumn("🗺️ Action", display_text="Route App")},
                 hide_index=True
             )
 
