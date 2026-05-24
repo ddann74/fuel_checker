@@ -10,7 +10,6 @@ st.title("⛽ Automated Fuel Optimizer")
 
 # --- FUNCTIONS ---
 def search_address(searchterm: str):
-    """Free OpenStreetMap search for autocomplete."""
     if not searchterm or len(searchterm) < 3: return []
     url = "https://nominatim.openstreetmap.org/search"
     try:
@@ -22,7 +21,7 @@ def search_address(searchterm: str):
 def geocode_address(address_string):
     url = "https://nominatim.openstreetmap.org/search"
     try:
-        response = requests.get(url, params={"q": address_string, "format": "json", "limit": 1}, 
+        response = requests.get(url, params={"q": searchterm, "format": "json", "limit": 1}, 
                                 headers={"User-Agent": "FuelFinderApp/1.0"}, timeout=5)
         if response.status_code == 200 and response.json():
             return float(response.json()[0]["lat"]), float(response.json()[0]["lon"])
@@ -35,29 +34,27 @@ def get_live_tomtom_distance(o_lat, o_lon, d_lat, d_lon):
     return (R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))) * 1.3
 
 # --- UI INTERFACE ---
-with st.expander("🚗 Vehicle Settings & Planned Route", expanded=True):
+with st.expander("🚗 Vehicle Settings & Route", expanded=True):
     col1, col2 = st.columns(2)
     with col1:
         fuel_economy = st.number_input("Fuel Economy (L/100km)", value=8.5)
-        tank_capacity = st.number_input("Total Tank Capacity (Liters)", value=60)
+        tank_capacity = st.number_input("Tank Capacity (L)", value=60)
     with col2:
-        fuel_type_selection = st.selectbox("Select Fuel Type", options=["E10", "U91", "P95", "P98", "Diesel"])
-        manual_dest = st_searchbox(search_address, label="Destination Address", placeholder="Start typing address...")
+        manual_dest = st_searchbox(search_address, label="Destination", placeholder="Enter destination...")
     
-    fuel_gauge_pct = st.slider("Current Fuel Gauge (%)", 0, 100, 25)
+    fuel_gauge_pct = st.slider("Current Fuel (%)", 0, 100, 25)
     liters_to_fill = int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
 
-if st.button("🚀 Auto-Scan & Optimize"):
+if st.button("🚀 Find On-Route Stations"):
     if not manual_dest:
         st.warning("Please select a destination.")
         st.stop()
         
     dest_coords = geocode_address(manual_dest)
     if not dest_coords:
-        st.error("❌ Could not find those coordinates.")
+        st.error("❌ Could not resolve destination.")
         st.stop()
-    
-    # Baseline location (Fairy Meadow)
+        
     user_lat, user_lon = -34.397, 150.893
     raw_stations = [{"Station": "Shell Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Brand": "Shell"},
                     {"Station": "7-Eleven Wollongong", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Brand": "7-Eleven"}]
@@ -70,28 +67,18 @@ if st.button("🚀 Auto-Scan & Optimize"):
         leg_b = get_live_tomtom_distance(row['Latitude'], row['Longitude'], dest_coords[0], dest_coords[1])
         detour_km = max(0.0, (leg_a + leg_b) - base_dist)
         
-        cost_at_pump = liters_to_fill * row['Price']
-        cost_detour_fuel = ((detour_km * fuel_economy) / 100.0) * row['Price']
-        total_trip_cost = cost_at_pump + cost_detour_fuel
-        
-        results.append({
-            "Station": row['Station'], "Brand": row['Brand'], 
-            "Total Cost": total_trip_cost,
-            "True $/L": total_trip_cost / liters_to_fill,
-            # Updated to deep link format to trigger Waze app on mobile
-            "Navigate": f"waze://?ll={row['Latitude']},{row['Longitude']}&navigate=yes"
-        })
+        # Only include if detour is under 5km
+        if detour_km <= 5.0:
+            total_trip_cost = (liters_to_fill * row['Price']) + (((detour_km * fuel_economy) / 100.0) * row['Price'])
+            results.append({
+                "Station": row['Station'], "Brand": row['Brand'], 
+                "Detour (km)": round(detour_km, 1),
+                "Total Cost": total_trip_cost,
+                "Navigate": f"waze://?ll={row['Latitude']},{row['Longitude']}&navigate=yes"
+            })
     
-    df = pd.DataFrame(results).sort_values("Total Cost")
-    df["Net Savings"] = df["Total Cost"].max() - df["Total Cost"]
-    
-    df_display = df.copy()
-    df_display["Net Savings"] = df_display["Net Savings"].map("${:.2f}".format)
-    df_display["True $/L"] = df_display["True $/L"].map("${:.3f}".format)
-    df_display["Total Cost"] = df_display["Total Cost"].map("${:.2f}".format)
-    
-    st.dataframe(
-        df_display[["Station", "Brand", "Net Savings", "True $/L", "Total Cost", "Navigate"]], 
-        column_config={"Navigate": st.column_config.LinkColumn("🗺️ Action", display_text="Map")},
-        hide_index=True
-    )
+    if not results:
+        st.error("No stations found within 5km of your route.")
+    else:
+        df = pd.DataFrame(results).sort_values("Total Cost")
+        st.dataframe(df, column_config={"Navigate": st.column_config.LinkColumn("🗺️ Action", display_text="Map")}, hide_index=True)
