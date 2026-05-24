@@ -64,11 +64,13 @@ with st.expander("🚗 Vehicle Settings & Route", expanded=True):
     with col1:
         fuel_economy = st.number_input("Fuel Economy (L/100km)", value=8.5)
         tank_capacity = st.number_input("Tank Capacity (L)", value=60)
+        trip_mode = st.radio("Trip Mode", ["One Way", "Return"], horizontal=True)
     with col2:
         manual_dest = st_searchbox(search_address, label="Destination", placeholder="Enter destination...")
+        fuel_gauge_pct = st.slider("Current Fuel (%)", 0, 100, 25, step=25)
     
-    fuel_gauge_pct = st.slider("Current Fuel (%)", 0, 100, 25, step=25)
     liters_to_fill = int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
+    multiplier = 2 if trip_mode == "Return" else 1
 
 if st.button("🚀 Find On-Route Stations"):
     if not manual_dest:
@@ -80,7 +82,6 @@ if st.button("🚀 Find On-Route Stations"):
         st.error("❌ Could not resolve destination.")
         st.stop()
         
-    # Expanded station list (minimum 5)
     raw_stations = [
         {"Station": "Shell Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Brand": "Shell"},
         {"Station": "7-Eleven Wollongong", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Brand": "7-Eleven"},
@@ -98,7 +99,8 @@ if st.button("🚀 Find On-Route Stations"):
         detour_km = max(0.0, (leg_a + leg_b) - base_dist)
         
         if detour_km <= 5.0:
-            total_trip_cost = (liters_to_fill * row['Price']) + (((detour_km * fuel_economy) / 100.0) * row['Price'])
+            # Scale distance fuel by multiplier
+            total_trip_cost = (liters_to_fill * row['Price']) + (((detour_km * multiplier * fuel_economy) / 100.0) * row['Price'])
             results.append({
                 "Station": row['Station'], "Brand": row['Brand'], 
                 "Detour (km)": round(detour_km, 1),
