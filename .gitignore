@@ -1,0 +1,10 @@
+# Create a .env file and add your API keys:
+# FUELCHECK_API_KEY=your_api_key_here
+# TOMTOM_API_KEY=your_api_key_here
+
+# DO NOT COMMIT .env FILE TO PUBLIC REPOSITORIES
+.env
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+.DS_Store
