@@ -67,7 +67,8 @@ with st.expander("🚗 Vehicle Settings & Route", expanded=True):
     with col2:
         manual_dest = st_searchbox(search_address, label="Destination", placeholder="Enter destination...")
     
-    fuel_gauge_pct = st.slider("Current Fuel (%)", 0, 100, 25)
+    # Updated: slider now moves in 25% increments
+    fuel_gauge_pct = st.slider("Current Fuel (%)", 0, 100, 25, step=25)
     liters_to_fill = int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
 
 if st.button("🚀 Find On-Route Stations"):
@@ -107,7 +108,6 @@ if st.button("🚀 Find On-Route Stations"):
         df = pd.DataFrame(results).sort_values("Total Cost")
         df["Net Savings"] = df["Total Cost"].max() - df["Total Cost"]
         
-        # Display Formatting
         df_display = df.copy()
         df_display["Net Savings"] = df_display["Net Savings"].map("${:.2f}".format)
         df_display["Total Cost"] = df_display["Total Cost"].map("${:.2f}".format)
