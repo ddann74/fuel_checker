@@ -25,6 +25,16 @@ def get_location_js():
     </script>
     """
 
+def search_address(searchterm: str):
+    if not searchterm or len(searchterm) < 3: return []
+    url = "https://nominatim.openstreetmap.org/search"
+    try:
+        # User-Agent is required by OpenStreetMap
+        response = requests.get(url, params={"q": searchterm, "format": "json", "limit": 5}, 
+                                headers={"User-Agent": "FuelFinderApp/1.0"}, timeout=3)
+        return [res["display_name"] for res in response.json()]
+    except: return []
+
 def geocode_address(address_string):
     url = "https://nominatim.openstreetmap.org/search"
     try:
@@ -58,28 +68,23 @@ with st.expander("🚗 Vehicle Settings & Route", expanded=True):
         trip_mode = st.radio("Trip Mode", ["One Way", "Return"], horizontal=True)
     with col2:
         fuel_gauge_pct = st.slider("Current Fuel (%)", 0, 100, 25, step=25)
-        # NEW: Override volume calculation
         manual_volume = st.number_input("Fuel Required (L) - Optional", min_value=0.0, value=0.0)
         target_savings = st.number_input("Target Savings ($)", min_value=0.0, value=2.0, step=0.5)
 
-    # Logic for liters to fill
-    if manual_volume > 0:
-        liters_to_fill = manual_volume
-    else:
-        liters_to_fill = int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
-        
+    liters_to_fill = manual_volume if manual_volume > 0 else int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
     multiplier = 2 if trip_mode == "Return" else 1
 
-manual_dest = st_searchbox(lambda s: [], label="Destination", placeholder="Enter destination...")
+# Fixed: Explicitly declare the searchbox outside the button/if block
+manual_dest = st_searchbox(search_address, label="Destination", placeholder="Enter destination...")
 
 if st.button("🚀 Find On-Route Stations"):
     if not manual_dest:
-        st.warning("Please select a destination.")
+        st.warning("Please select a destination from the list.")
         st.stop()
         
     dest_coords = geocode_address(manual_dest)
     if not dest_coords:
-        st.error("❌ Could not resolve destination.")
+        st.error("❌ Could not resolve destination coordinates. Please try a more specific address.")
         st.stop()
         
     raw_stations = [
