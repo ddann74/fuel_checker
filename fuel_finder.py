@@ -67,7 +67,6 @@ with st.expander("🚗 Vehicle Settings & Route", expanded=True):
     with col2:
         manual_dest = st_searchbox(search_address, label="Destination", placeholder="Enter destination...")
     
-    # Updated: slider now moves in 25% increments
     fuel_gauge_pct = st.slider("Current Fuel (%)", 0, 100, 25, step=25)
     liters_to_fill = int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
 
@@ -81,8 +80,14 @@ if st.button("🚀 Find On-Route Stations"):
         st.error("❌ Could not resolve destination.")
         st.stop()
         
-    raw_stations = [{"Station": "Shell Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Brand": "Shell"},
-                    {"Station": "7-Eleven Wollongong", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Brand": "7-Eleven"}]
+    # Expanded station list (minimum 5)
+    raw_stations = [
+        {"Station": "Shell Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Brand": "Shell"},
+        {"Station": "7-Eleven Wollongong", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Brand": "7-Eleven"},
+        {"Station": "Metro Fuel North Wollongong", "Price": 1.65, "Latitude": -34.4130, "Longitude": 150.8950, "Brand": "Metro"},
+        {"Station": "BP Corrimal", "Price": 1.89, "Latitude": -34.3810, "Longitude": 150.9050, "Brand": "BP"},
+        {"Station": "Coles Express Towradgi", "Price": 1.79, "Latitude": -34.4020, "Longitude": 150.9020, "Brand": "Coles"}
+    ]
     
     results = []
     base_dist = get_live_tomtom_distance(user_lat, user_lon, dest_coords[0], dest_coords[1])
