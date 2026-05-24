@@ -191,7 +191,7 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
             return stations
         else:
             logger.warning("NSW API returned empty stations list. Falling back to demo data.")
-            st.warning("No stations found from API. Using demo data instead.")
+            st.warning("⚠️ No stations found from API. Using demo data instead.")
             return get_demo_data()
         
     except requests.exceptions.Timeout:
@@ -209,7 +209,6 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
     except Exception as e:
         logger.error(f"Unexpected error fetching fuel prices: {e}")
         st.error(f"❌ Error fetching fuel prices: {str(e)}")
-        st.error(f"Debug: {type(e).__name__}: {str(e)}")
         return get_demo_data()
 
 
@@ -418,14 +417,42 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", use_co
     logger.info(f"Raw stations received: {len(raw_stations) if raw_stations else 0}")
     
     if raw_stations is None or len(raw_stations) == 0:
-        st.error("❌ No stations returned. Something went wrong.")
-        st.info("💡 **Troubleshooting:**")
-        st.write("""
-        - Click 🧪 **Test NSW FuelCheck API** in the sidebar to check if your key works
-        - Ensure internet connectivity
-        - Try clicking '📍 Detect My Location' to update coordinates
-        - Demo data should load automatically if no API key provided
-        """)
+        st.error("❌ **No Stations Found**")
+        st.divider()
+        
+        # Show comprehensive troubleshooting
+        with st.expander("🔧 Troubleshooting Steps", expanded=True):
+            st.markdown("""
+            ### Step 1: Test Your API Key
+            Click the 🧪 **Test NSW FuelCheck API** button in the sidebar to verify it's working.
+            
+            ### Step 2: Check These Common Issues
+            
+            **❌ No API key entered?**
+            - Leave field blank to use demo data (4 test stations)
+            - Demo mode always works!
+            
+            **❌ Got a 401 error?**
+            - Your API key is invalid or expired
+            - Get a new one from https://www.fuelcheck.nsw.gov.au/api
+            
+            **❌ Got a 403 error?**
+            - Your key exists but doesn't have permission
+            - Check your FuelCheck account settings
+            
+            **❌ Connection timeout?**
+            - Check your internet connection
+            - Try again in a few seconds
+            
+            ### Step 3: Update Your Location
+            Click 📍 **Detect My Location** to ensure you're using current coordinates.
+            
+            ### Step 4: Check API Status
+            Current API Status in sidebar shows what's active.
+            """)
+        
+        st.info("💡 **Demo Data Available**: If you don't have an API key, the app should show demo data automatically. If not, try refreshing the page.")
+        
     else:
         results = []
         with st.spinner("Calculating optimized routes..."):
