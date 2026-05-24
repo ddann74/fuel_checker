@@ -11,21 +11,15 @@ st.title("⛽ Automated Fuel Optimizer")
 
 # --- FUNCTIONS ---
 def get_location_js():
-    """JavaScript to fetch user GPS coordinates."""
     return """
-    <button id="btn" onclick="getLocation()">📍 Detect My Location</button>
-    <p id="status"></p>
+    <button id="btn" onclick="getLocation()" style="padding: 10px; cursor: pointer;">📍 Detect My Location</button>
     <script>
         function getLocation() {
             if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (pos) => {
-                        const url = window.location.href + (window.location.href.includes('?') ? '&' : '?') + 
-                                    'lat=' + pos.coords.latitude + '&lon=' + pos.coords.longitude;
-                        window.location.href = url;
-                    },
-                    (err) => { document.getElementById("status").innerHTML = "Error: " + err.message; }
-                );
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    const url = window.location.href.split('?')[0] + '?lat=' + pos.coords.latitude + '&lon=' + pos.coords.longitude;
+                    window.location.href = url;
+                });
             }
         }
     </script>
@@ -58,13 +52,12 @@ def get_live_tomtom_distance(o_lat, o_lon, d_lat, d_lon):
     return (R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))) * 1.3
 
 # --- UI INTERFACE ---
-# Check if GPS data exists in the URL
 query_params = st.query_params
 user_lat = float(query_params.get("lat", -34.397))
 user_lon = float(query_params.get("lon", 150.893))
 
-st.write(f"📍 Current Coordinates: {user_lat:.4f}, {user_lon:.4f}")
-components.html(get_location_js(), height=50)
+st.write(f"📍 Current Location: {user_lat:.4f}, {user_lon:.4f}")
+components.html(get_location_js(), height=60)
 
 with st.expander("🚗 Vehicle Settings & Route", expanded=True):
     col1, col2 = st.columns(2)
@@ -81,6 +74,7 @@ if st.button("🚀 Find On-Route Stations"):
     if not manual_dest:
         st.warning("Please select a destination.")
         st.stop()
+        
     dest_coords = geocode_address(manual_dest)
     if not dest_coords:
         st.error("❌ Could not resolve destination.")
@@ -110,4 +104,15 @@ if st.button("🚀 Find On-Route Stations"):
         st.error("No stations found within 5km of your route.")
     else:
         df = pd.DataFrame(results).sort_values("Total Cost")
-        st.dataframe(df, column_config={"Navigate": st.column_config.LinkColumn("🗺️ Action", display_text="Map")}, hide_index=True)
+        df["Net Savings"] = df["Total Cost"].max() - df["Total Cost"]
+        
+        # Display Formatting
+        df_display = df.copy()
+        df_display["Net Savings"] = df_display["Net Savings"].map("${:.2f}".format)
+        df_display["Total Cost"] = df_display["Total Cost"].map("${:.2f}".format)
+        
+        st.dataframe(
+            df_display[["Station", "Brand", "Detour (km)", "Net Savings", "Total Cost", "Navigate"]], 
+            column_config={"Navigate": st.column_config.LinkColumn("🗺️ Action", display_text="Map")},
+            hide_index=True
+        )
