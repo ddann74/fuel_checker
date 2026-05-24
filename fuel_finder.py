@@ -31,7 +31,7 @@ NSW_FUEL_API_KEY = st.sidebar.text_input(
     "NSW FuelCheck API Token", 
     type="password", 
     value=os.getenv("NSW_FUEL_API_KEY", ""),
-    help="Required for live fuel prices. Get from: https://www.fuelcheck.nsw.gov.au/api"
+    help="Required for live fuel prices. Get from: https://api-portal.onegov.nsw.gov.au/"
 )
 
 # Show API status in sidebar
@@ -59,40 +59,49 @@ with st.sidebar:
         else:
             with st.spinner("Testing API connection..."):
                 try:
-                    url = "https://www.fuelcheck.nsw.gov.au/api/v1/sites/prices/nearby"
+                    # Official NSW FuelCheck API endpoint via OneGov
+                    url = "https://api.onegov.nsw.gov.au/FuelPriceCheck/v1/fuel/prices/near"
                     headers = {
-                        "Authorization": f"Bearer {NSW_FUEL_API_KEY}",
+                        "apikey": NSW_FUEL_API_KEY,
                         "Content-Type": "application/json",
                         "User-Agent": "FuelOptimizer/1.0"
                     }
                     params = {
                         "latitude": -34.397,
                         "longitude": 150.893,
-                        "fuelType": "E10",
+                        "fueltype": "E10",
                         "radius": 15
                     }
                     
+                    logger.info(f"Testing API with URL: {url}")
+                    logger.info(f"Parameters: {params}")
+                    
                     response = requests.get(url, headers=headers, params=params, timeout=10)
+                    logger.info(f"Response status code: {response.status_code}")
+                    logger.info(f"Response headers: {response.headers}")
+                    logger.info(f"Response body: {response.text[:500]}")
                     
                     if response.status_code == 200:
                         data = response.json()
-                        sites_count = len(data.get('sites', []))
+                        sites_count = len(data) if isinstance(data, list) else len(data.get('sites', []))
                         st.success(f"✅ **API is Working!**")
                         st.write(f"Found **{sites_count}** fuel stations")
                         if sites_count > 0:
                             st.write("Sample station:")
-                            sample = data['sites'][0]
-                            st.json({
-                                "name": sample.get('name'),
-                                "price": sample.get('price'),
-                                "brand": sample.get('brand')
-                            })
+                            sample = data[0] if isinstance(data, list) else data['sites'][0]
+                            st.json(sample)
                     elif response.status_code == 401:
                         st.error("❌ **Authentication Failed (401)**")
                         st.write("Your API key is invalid or expired. Check your NSW FuelCheck token.")
+                        st.write(f"Response: {response.text}")
                     elif response.status_code == 403:
                         st.error("❌ **Access Denied (403)**")
                         st.write("Your API key doesn't have permission. Check your account settings.")
+                        st.write(f"Response: {response.text}")
+                    elif response.status_code == 404:
+                        st.error("❌ **Endpoint Not Found (404)**")
+                        st.write("The API endpoint may have changed. Check: https://api-portal.onegov.nsw.gov.au/")
+                        st.write(f"Response: {response.text}")
                     else:
                         st.error(f"❌ **API Error ({response.status_code})**")
                         st.write(f"Response: {response.text}")
@@ -100,6 +109,12 @@ with st.sidebar:
                 except requests.exceptions.Timeout:
                     st.error("❌ **Connection Timeout**")
                     st.write("The API took too long to respond. Check your internet connection.")
+                except requests.exceptions.ConnectionError as e:
+                    st.error("❌ **Connection Error**")
+                    st.write(f"Could not reach the API server. Details: {str(e)}")
+                except ValueError as e:
+                    st.error("❌ **Invalid JSON Response**")
+                    st.write(f"API returned non-JSON response. Details: {str(e)}")
                 except Exception as e:
                     st.error(f"❌ **Error: {type(e).__name__}**")
                     st.write(f"Details: {str(e)}")
@@ -127,13 +142,13 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
     for all surrounding service stations within a geographic bounding box.
     
     NSW FuelCheck API Documentation:
-    https://www.fuelcheck.nsw.gov.au/api
+    https://api-portal.onegov.nsw.gov.au/
     
-    Endpoint: GET https://www.fuelcheck.nsw.gov.au/api/v1/sites/prices/nearby
+    Endpoint: GET https://api.onegov.nsw.gov.au/FuelPriceCheck/v1/fuel/prices/near
     Query Parameters:
     - latitude: User's latitude
     - longitude: User's longitude
-    - fuelType: E10, U91, P95, P98, Diesel
+    - fueltype: E10, U91, P95, P98, Diesel
     - radius: Search radius in kilometers
     """
     
@@ -145,19 +160,19 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
         logger.info(f"Returning {len(demo)} test stations")
         return demo
     
-    # Official NSW FuelCheck API Endpoint
-    url = "https://www.fuelcheck.nsw.gov.au/api/v1/sites/prices/nearby"
+    # Official NSW FuelCheck API Endpoint via OneGov
+    url = "https://api.onegov.nsw.gov.au/FuelPriceCheck/v1/fuel/prices/near"
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "apikey": api_key,
         "Content-Type": "application/json",
         "User-Agent": "FuelOptimizer/1.0"
     }
     
-    # API accepts latitude, longitude, fuelType, radius (km)
+    # API accepts latitude, longitude, fueltype, radius (km)
     params = {
         "latitude": user_lat,
         "longitude": user_lon,
-        "fuelType": fuel_type,
+        "fueltype": fuel_type,
         "radius": 15  # Search radius in km
     }
     
@@ -167,19 +182,22 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
         response.raise_for_status()
         
         data = response.json()
-        logger.info(f"API Response: {data}")
+        logger.info(f"API Response received with {len(data) if isinstance(data, list) else len(data.get('sites', []))} stations")
         stations = []
         
-        for stn in data.get('sites', []):
+        # Handle both list and object responses
+        sites = data if isinstance(data, list) else data.get('sites', [])
+        
+        for stn in sites:
             try:
                 stations.append({
-                    "Station": stn.get('name', 'Unknown'),
-                    "Price": float(stn.get('price', 0)) / 100.0,  # Convert cents to dollars
-                    "Latitude": float(stn.get('latitude', 0)),
-                    "Longitude": float(stn.get('longitude', 0)),
+                    "Station": stn.get('stationname', stn.get('name', 'Unknown')),
+                    "Price": float(stn.get('price', 0)) / 100.0 if stn.get('price', 0) > 100 else float(stn.get('price', 0)),
+                    "Latitude": float(stn.get('latitude', stn.get('lat', 0))),
+                    "Longitude": float(stn.get('longitude', stn.get('long', 0))),
                     "Type": "Direct Trip",
                     "Brand": stn.get('brand', 'Unknown'),
-                    "Updated": stn.get('lastUpdated', 'N/A')
+                    "Updated": stn.get('updated', stn.get('lastUpdated', 'N/A'))
                 })
             except (ValueError, KeyError) as e:
                 logger.warning(f"Error parsing station data: {e}")
@@ -205,6 +223,12 @@ def fetch_live_fuelcheck_prices(user_lat, user_lon, fuel_type="E10", api_key=Non
             st.warning("🔑 Invalid API key. Check your NSW FuelCheck token.")
         elif e.response.status_code == 403:
             st.warning("🚫 Access denied. Your API key may not have permission.")
+        elif e.response.status_code == 404:
+            st.warning("🔍 API endpoint not found. Check the API documentation.")
+        return get_demo_data()
+    except requests.exceptions.ConnectionError:
+        logger.error("Could not connect to NSW FuelCheck API")
+        st.error("❌ Connection error. Could not reach the API server.")
         return get_demo_data()
     except Exception as e:
         logger.error(f"Unexpected error fetching fuel prices: {e}")
@@ -383,10 +407,11 @@ with st.sidebar.expander("📡 API Setup Guide"):
     ### API Keys (Optional):
     
     **NSW FuelCheck API (Recommended):**
-    1. Visit [FuelCheck NSW](https://www.fuelcheck.nsw.gov.au/api)
-    2. Register for API access
-    3. Get your Bearer token
-    4. Paste token above for **live fuel prices**
+    1. Visit [OneGov API Portal](https://api-portal.onegov.nsw.gov.au/)
+    2. Register for a developer account
+    3. Subscribe to FuelPriceCheck API
+    4. Get your API key
+    5. Paste key above for **live fuel prices**
     
     **Google Maps API (Optional):**
     1. Go to [Google Cloud Console](https://console.cloud.google.com)
@@ -434,11 +459,15 @@ if st.button("🚀 Auto-Scan & Optimize Best Fuel Value", type="primary", use_co
             
             **❌ Got a 401 error?**
             - Your API key is invalid or expired
-            - Get a new one from https://www.fuelcheck.nsw.gov.au/api
+            - Get a new one from https://api-portal.onegov.nsw.gov.au/
             
             **❌ Got a 403 error?**
             - Your key exists but doesn't have permission
             - Check your FuelCheck account settings
+            
+            **❌ Got a 404 error?**
+            - The API endpoint may have changed
+            - Visit https://api-portal.onegov.nsw.gov.au/ for current endpoints
             
             **❌ Connection timeout?**
             - Check your internet connection
