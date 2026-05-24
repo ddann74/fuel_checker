@@ -53,7 +53,7 @@ def get_live_tomtom_distance(o_lat, o_lon, d_lat, d_lon):
 
 # --- UI INTERFACE ---
 query_params = st.query_params
-user_lat = float(query_params.get("lat", -34.397))
+user_lat = float(query_params.get("lat", -34.397)) # Default to Fairy Meadow
 user_lon = float(query_params.get("lon", 150.893))
 
 st.write(f"📍 Current Location: {user_lat:.4f}, {user_lon:.4f}")
@@ -82,15 +82,16 @@ if st.button("🚀 Find On-Route Stations"):
         
     dest_coords = geocode_address(manual_dest)
     if not dest_coords:
-        st.error("❌ Could not resolve destination.")
+        st.error("❌ Could not resolve destination coordinates.")
         st.stop()
         
+    # Updated Station list with Smeaton Grange locations
     raw_stations = [
+        {"Station": "Ampol Urbanista", "Price": 1.88, "Latitude": -34.0321, "Longitude": 150.7560, "Brand": "Ampol"},
+        {"Station": "Enhance Smeaton Grange", "Price": 1.85, "Latitude": -34.0418, "Longitude": 150.7614, "Brand": "Enhance"},
+        {"Station": "EG Ampol Mount Annan", "Price": 1.90, "Latitude": -34.0469, "Longitude": 150.7609, "Brand": "Ampol"},
         {"Station": "Shell Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Brand": "Shell"},
-        {"Station": "7-Eleven Wollongong", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Brand": "7-Eleven"},
-        {"Station": "Metro Fuel North Wollongong", "Price": 1.65, "Latitude": -34.4130, "Longitude": 150.8950, "Brand": "Metro"},
-        {"Station": "BP Corrimal", "Price": 1.89, "Latitude": -34.3810, "Longitude": 150.9050, "Brand": "BP"},
-        {"Station": "Coles Express Towradgi", "Price": 1.79, "Latitude": -34.4020, "Longitude": 150.9020, "Brand": "Coles"}
+        {"Station": "7-Eleven Wollongong", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Brand": "7-Eleven"}
     ]
     
     results = []
@@ -101,7 +102,8 @@ if st.button("🚀 Find On-Route Stations"):
         leg_b = get_live_tomtom_distance(row['Latitude'], row['Longitude'], dest_coords[0], dest_coords[1])
         detour_km = max(0.0, (leg_a + leg_b) - base_dist)
         
-        if detour_km <= 5.0:
+        # Increased threshold to 50km to capture Smeaton Grange from Fairy Meadow
+        if detour_km <= 50.0:
             total_trip_cost = (liters_to_fill * row['Price']) + (((detour_km * multiplier * fuel_economy) / 100.0) * row['Price'])
             results.append({
                 "Station": row['Station'], "Brand": row['Brand'], 
@@ -112,7 +114,7 @@ if st.button("🚀 Find On-Route Stations"):
             })
     
     if not results:
-        st.error("No stations found within 5km of your route.")
+        st.error("No stations found.")
     else:
         df = pd.DataFrame(results).sort_values("Total Cost")
         df["Net Savings"] = df["Total Cost"].max() - df["Total Cost"]
