@@ -124,7 +124,7 @@ def fetch_nsw_fuel_prices(lat, lon, radius_km=10, fuel_type="E10"):
             st.error(f"NSW Fuel API error: {r.status_code} — {r.text[:300]}")
             return []
         data = r.json()
-        st.sidebar.code(f"Fuel API response:\n{str(data)[:1000]}", language="text")
+        st.sidebar.code(f"Fuel API keys: {list(data.keys())}\n\nFirst station: {data.get('stations', [{}])[0]}\n\nFirst price entry: {data.get('prices', data.get('Prices', [{}]))[0] if data.get('prices') or data.get('Prices') else 'no prices key'}", language="text")
         stations = []
         for s in data.get("stations", []):
             price_cents = s.get("Price") or s.get("price")
