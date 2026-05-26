@@ -6,13 +6,21 @@ from streamlit_searchbox import st_searchbox
 import streamlit.components.v1 as components
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Fuel Tracker Mobile", page_icon="⛽", layout="centered")
+NSW_API_KEY        = "1MYSRAx5yvqHUZc6VGtxix6oMA2qgfRT"
+NSW_API_SECRET     = "BMvWacw15Et8uFGF"
+NSW_AUTH_HEADER    = "Basic MU1ZU1JBeDV5dnFIVVpjNlZHdHhpeDZvTUEycWdmUlQ6Qk12V2FjdzE1RXQ4dUZHRg=="
+TOMTOM_API_KEY     = "RoiDwi5Y35NaVKTJEyFTX5VtED45vS2e"
+
+st.set_page_config(page_title="Fuel Optimizer", page_icon="⛽", layout="centered")
 st.title("⛽ Automated Fuel Optimizer")
 
 # --- FUNCTIONS ---
+
 def get_location_js():
     return """
-    <button id="btn" onclick="getLocation()" style="padding: 10px; cursor: pointer;">📍 Detect My Location</button>
+    <button id="btn" onclick="getLocation()" style="padding:10px 18px;cursor:pointer;background:#1a1a1a;color:#4ade80;border:1px solid #2d5a2d;border-radius:6px;font-size:0.85rem;">
+        📍 Detect My Location
+    </button>
     <script>
         function getLocation() {
             if (navigator.geolocation) {
@@ -26,107 +34,230 @@ def get_location_js():
     """
 
 def search_address(searchterm: str):
-    if not searchterm or len(searchterm) < 3: return []
-    url = "https://nominatim.openstreetmap.org/search"
+    if not searchterm or len(searchterm) < 3:
+        return []
     try:
-        response = requests.get(url, params={"q": searchterm, "format": "json", "limit": 5}, 
-                                headers={"User-Agent": "FuelFinderApp/1.0"}, timeout=3)
-        return [res["display_name"] for res in response.json()]
-    except: return []
+        r = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": searchterm, "format": "json", "limit": 5},
+            headers={"User-Agent": "FuelFinderApp/1.0"},
+            timeout=3,
+        )
+        return [res["display_name"] for res in r.json()]
+    except:
+        return []
 
 def geocode_address(address_string):
-    url = "https://nominatim.openstreetmap.org/search"
     try:
-        response = requests.get(url, params={"q": address_string, "format": "json", "limit": 1}, 
-                                headers={"User-Agent": "FuelFinderApp/1.0"}, timeout=10)
-        data = response.json()
-        if response.status_code == 200 and data:
+        r = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": address_string, "format": "json", "limit": 1},
+            headers={"User-Agent": "FuelFinderApp/1.0"},
+            timeout=10,
+        )
+        data = r.json()
+        if r.status_code == 200 and data:
             return float(data[0]["lat"]), float(data[0]["lon"])
-        return None
-    except: return None
+    except:
+        pass
+    return None
 
-def get_live_tomtom_distance(o_lat, o_lon, d_lat, d_lon):
-    R = 6371.0
-    dlat, dlon = math.radians(d_lat - o_lat), math.radians(d_lon - o_lon)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(o_lat)) * math.cos(math.radians(d_lat)) * math.sin(dlon/2)**2
-    return (R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))) * 1.3
+def get_tomtom_distance_km(o_lat, o_lon, d_lat, d_lon):
+    """Real road distance from TomTom Routing API."""
+    url = f"https://api.tomtom.com/routing/1/calculateRoute/{o_lat},{o_lon}:{d_lat},{d_lon}/json"
+    try:
+        r = requests.get(
+            url,
+            params={"key": TOMTOM_API_KEY, "travelMode": "car", "routeType": "fastest"},
+            timeout=8,
+        )
+        data = r.json()
+        meters = data["routes"][0]["summary"]["lengthInMeters"]
+        return meters / 1000.0
+    except:
+        R = 6371.0
+        dlat = math.radians(d_lat - o_lat)
+        dlon = math.radians(d_lon - o_lon)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(o_lat)) * math.cos(math.radians(d_lat)) * math.sin(dlon/2)**2
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)) * 1.3
 
-# --- UI INTERFACE ---
+def fetch_nsw_fuel_prices(lat, lon, radius_km=10, fuel_type="E10"):
+    """Fetch live prices from NSW FuelCheck API."""
+    url = "https://api.nsw.gov.au/v1/fuel/lovs/stations/near"
+    headers = {
+        "Authorization": NSW_AUTH_HEADER,
+        "apikey": NSW_API_KEY,
+        "Content-Type": "application/json; charset=utf-8",
+        "transactionid": "1",
+        "requesttimestamp": "01/01/2024 00:00:00 AM",
+    }
+    params = {
+        "lat": lat,
+        "lng": lon,
+        "radius": radius_km,
+        "fueltype": fuel_type,
+        "maxresults": 25,
+    }
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        stations = []
+        for s in data.get("stations", []):
+            price_cents = s.get("Price") or s.get("price")
+            if not price_cents:
+                continue
+            stations.append({
+                "Station":   s.get("Name") or s.get("name", "Unknown"),
+                "Brand":     s.get("Brand") or s.get("brand", ""),
+                "Price":     float(price_cents) / 100.0,
+                "Latitude":  float(s.get("Lat") or s.get("lat", lat)),
+                "Longitude": float(s.get("Lng") or s.get("lng", lon)),
+                "Address":   s.get("Address") or s.get("address", ""),
+            })
+        return stations
+    except Exception as e:
+        st.error(f"NSW Fuel API error: {e}")
+        return []
+
+# --- UI ---
+
 query_params = st.query_params
 user_lat = float(query_params.get("lat", -34.397))
 user_lon = float(query_params.get("lon", 150.893))
 
-st.write(f"📍 Current Location: {user_lat:.4f}, {user_lon:.4f}")
-components.html(get_location_js(), height=60)
+components.html(get_location_js(), height=55)
+st.caption(f"📍 Current position: `{user_lat:.5f}, {user_lon:.5f}`")
 
 with st.expander("🚗 Vehicle Settings & Route", expanded=True):
     col1, col2 = st.columns(2)
     with col1:
-        fuel_economy = st.number_input("Fuel Economy (L/100km)", value=8.5)
-        tank_capacity = st.number_input("Total Tank Capacity (L)", value=60)
-        trip_mode = st.radio("Trip Mode", ["One Way", "Return"], horizontal=True)
+        fuel_economy   = st.number_input("Fuel Economy (L/100km)", value=8.5, step=0.5)
+        tank_capacity  = st.number_input("Total Tank Capacity (L)", value=60.0, step=5.0)
+        trip_mode      = st.radio("Trip Mode", ["One Way", "Return"], horizontal=True)
     with col2:
-        fuel_gauge_pct = st.slider("Current Fuel (%)", 0, 100, 25, step=25)
-        manual_volume = st.number_input("Fuel Required (L) - Optional", min_value=0.0, value=0.0)
+        fuel_gauge_pct = st.slider("Current Fuel (%)", 0, 100, 25, step=5)
+        fuel_type      = st.selectbox("Fuel Type", ["E10", "U91", "U95", "U98", "P98", "Diesel"])
+        manual_volume  = st.number_input("Override Fill Volume (L, 0 = auto)", min_value=0.0, value=0.0)
+        search_radius  = st.slider("Search Radius (km)", 5, 50, 10, step=5)
 
-    liters_to_fill = manual_volume if manual_volume > 0 else int(tank_capacity * (1 - (fuel_gauge_pct / 100.0)))
-    multiplier = 2 if trip_mode == "Return" else 1
+    liters_to_fill  = manual_volume if manual_volume > 0 else round(tank_capacity * (1.0 - fuel_gauge_pct / 100.0), 1)
+    trip_multiplier = 2 if trip_mode == "Return" else 1
 
-manual_dest = st_searchbox(search_address, label="Destination", placeholder="Enter destination...")
+st.caption(f"Will fill **{liters_to_fill:.1f} L** of {fuel_type}")
 
-if st.button("🚀 Find Profitable Stations (>$5 Savings)"):
+manual_dest = st_searchbox(search_address, label="Destination", placeholder="Enter destination…")
+
+if st.button("🚀 Find Best Station (Ranked by Savings)", use_container_width=True, type="primary"):
+
     if not manual_dest:
-        st.warning("Please select a destination.")
+        st.warning("Please enter a destination.")
         st.stop()
-        
-    dest_coords = geocode_address(manual_dest)
+
+    with st.spinner("Geocoding destination…"):
+        dest_coords = geocode_address(manual_dest)
     if not dest_coords:
         st.error("❌ Could not resolve destination.")
         st.stop()
-        
-    raw_stations = [
-        {"Station": "Ampol Urbanista", "Price": 1.88, "Latitude": -34.0321, "Longitude": 150.7560, "Brand": "Ampol"},
-        {"Station": "Enhance Smeaton Grange", "Price": 1.85, "Latitude": -34.0418, "Longitude": 150.7614, "Brand": "Enhance"},
-        {"Station": "EG Ampol Mount Annan", "Price": 1.90, "Latitude": -34.0469, "Longitude": 150.7609, "Brand": "Ampol"},
-        {"Station": "Shell Fairy Meadow", "Price": 1.84, "Latitude": -34.3920, "Longitude": 150.8990, "Brand": "Shell"},
-        {"Station": "7-Eleven Wollongong", "Price": 1.69, "Latitude": -34.4100, "Longitude": 150.8750, "Brand": "7-Eleven"}
-    ]
-    
-    results = []
-    base_dist = get_live_tomtom_distance(user_lat, user_lon, dest_coords[0], dest_coords[1])
-    max_price = max(s['Price'] for s in raw_stations)
-    baseline_cost = (liters_to_fill * max_price)
-    
-    for row in raw_stations:
-        leg_a = get_live_tomtom_distance(user_lat, user_lon, row['Latitude'], row['Longitude'])
-        leg_b = get_live_tomtom_distance(row['Latitude'], row['Longitude'], dest_coords[0], dest_coords[1])
-        detour_km = max(0.0, (leg_a + leg_b) - base_dist)
-        
-        total_trip_cost = (liters_to_fill * row['Price']) + (((detour_km * multiplier * fuel_economy) / 100.0) * row['Price'])
-        net_savings = baseline_cost - total_trip_cost
-        
-        if net_savings >= 5.0:
+    dest_lat, dest_lon = dest_coords
+
+    with st.spinner(f"Fetching live {fuel_type} prices within {search_radius} km…"):
+        raw_stations = fetch_nsw_fuel_prices(user_lat, user_lon, search_radius, fuel_type)
+
+    if not raw_stations:
+        st.warning("No stations returned. Try a larger search radius or different fuel type.")
+        st.stop()
+
+    with st.spinner("Calculating road distances via TomTom…"):
+
+        # ── Leg 0: direct trip distance (used only as a reference baseline) ──
+        base_dist_km = get_tomtom_distance_km(user_lat, user_lon, dest_lat, dest_lon)
+
+        results = []
+        for row in raw_stations:
+            s_lat, s_lon = row["Latitude"], row["Longitude"]
+            price = row["Price"]
+
+            # ── Leg A: user → station ──────────────────────────────────────────
+            # Real road km you must drive before you can fill up.
+            leg_a_km = get_tomtom_distance_km(user_lat, user_lon, s_lat, s_lon)
+
+            # ── Leg B: station → destination ──────────────────────────────────
+            # Road km from the station to your final destination.
+            # This is driven on a FULL tank at this station's price.
+            leg_b_km = get_tomtom_distance_km(s_lat, s_lon, dest_lat, dest_lon)
+
+            # ── Detour km ─────────────────────────────────────────────────────
+            # How much EXTRA distance this station adds vs going direct.
+            # Used for the On-Route indicator only — not part of cost anymore.
+            detour_km = max(0.0, (leg_a_km + leg_b_km) - base_dist_km)
+
+            # ── Fuel burnt on Leg A (before fill-up) ──────────────────────────
+            # You're burning existing tank fuel to reach the station.
+            # We price this at the station's rate because that's the fuel
+            # you're effectively choosing to consume by picking this station.
+            leg_a_fuel_cost = (leg_a_km * fuel_economy / 100.0) * price
+
+            # ── Fuel burnt on Leg B (after fill-up) ───────────────────────────
+            # You filled up at this station so this leg runs on its fuel price.
+            # For a return trip the driver refuels once, so we only multiply
+            # the destination leg — not the full return — by trip_multiplier.
+            leg_b_fuel_cost = (leg_b_km * trip_multiplier * fuel_economy / 100.0) * price
+
+            # ── Fill cost ─────────────────────────────────────────────────────
+            # Straight purchase cost of the litres you're putting in the tank.
+            fill_cost = liters_to_fill * price
+
+            # ── Total trip cost ───────────────────────────────────────────────
+            # Everything combined: getting to the station + filling up +
+            # driving the rest of the way to the destination.
+            total_cost = fill_cost + leg_a_fuel_cost + leg_b_fuel_cost
+
+            # ── Effective price per litre ─────────────────────────────────────
+            # Spreads all trip costs back over the litres purchased so you can
+            # compare stations on a single apples-to-apples $/L figure.
+            eff_price = total_cost / liters_to_fill if liters_to_fill > 0 else price
+
             results.append({
-                "Station": row['Station'], "Brand": row['Brand'], 
-                "Net Savings": net_savings,
-                "Detour (km)": round(detour_km, 1),
-                "On-Route": "✅ Yes" if detour_km <= 5.0 else "❌ No",
-                "Real Price/L": total_trip_cost / liters_to_fill if liters_to_fill > 0 else row['Price'],
-                "Total Cost": total_trip_cost,
-                "Navigate": f"waze://?ll={row['Latitude']},{row['Longitude']}&navigate=yes"
+                "_total":       total_cost,
+                "Station":      row["Station"],
+                "Brand":        row["Brand"],
+                "Listed $/L":   price,
+                "Eff $/L":      eff_price,
+                "To Station":   round(leg_a_km, 1),
+                "To Dest":      round(leg_b_km, 1),
+                "Detour (km)":  round(detour_km, 1),
+                "On-Route":     "✅" if detour_km <= 3.0 else ("🔶" if detour_km <= 8.0 else "❌"),
+                "Fill Cost":    fill_cost,
+                "Total Cost":   total_cost,
+                "Net Savings":  0.0,
+                "Navigate":     f"https://waze.com/ul?ll={dest_lat},{dest_lon}&navigate=yes&from={s_lat},{s_lon}",
             })
-    
-    if not results:
-        st.warning("No stations found that provide at least $5.00 in net savings.")
-    else:
-        df = pd.DataFrame(results).sort_values("Net Savings", ascending=False)
-        df_display = df.copy()
-        df_display["Net Savings"] = df_display["Net Savings"].map("${:.2f}".format)
-        df_display["Total Cost"] = df_display["Total Cost"].map("${:.2f}".format)
-        df_display["Real Price/L"] = df_display["Real Price/L"].map("${:.3f}".format)
-        
-        st.dataframe(
-            df_display[["Station", "Brand", "Net Savings", "Detour (km)", "On-Route", "Real Price/L", "Total Cost", "Navigate"]], 
-            column_config={"Navigate": st.column_config.LinkColumn("🗺️ Action", display_text="Map")},
-            hide_index=True
-        )
+
+    df = pd.DataFrame(results).sort_values("_total").reset_index(drop=True)
+    worst = df["_total"].max()
+    df["Net Savings"] = worst - df["_total"]
+
+    df_display = df.copy()
+    df_display["Net Savings"] = df_display["Net Savings"].map("${:.2f}".format)
+    df_display["Total Cost"]  = df_display["Total Cost"].map("${:.2f}".format)
+    df_display["Fill Cost"]   = df_display["Fill Cost"].map("${:.2f}".format)
+    df_display["Listed $/L"]  = df_display["Listed $/L"].map("${:.3f}".format)
+    df_display["Eff $/L"]     = df_display["Eff $/L"].map("${:.3f}".format)
+
+    st.success(f"✅ {len(df)} stations found · Direct trip: {base_dist_km:.1f} km")
+
+    st.dataframe(
+        df_display[[
+            "Station", "Brand", "On-Route", "Listed $/L", "Eff $/L",
+            "To Station", "To Dest", "Detour (km)",
+            "Fill Cost", "Net Savings", "Total Cost", "Navigate"
+        ]],
+        column_config={
+            "Navigate": st.column_config.LinkColumn("🗺️ Navigate", display_text="Waze"),
+            "To Station": st.column_config.NumberColumn("To Station (km)"),
+            "To Dest":    st.column_config.NumberColumn("To Dest (km)"),
+        },
+        hide_index=True,
+        use_container_width=True,
+    )
