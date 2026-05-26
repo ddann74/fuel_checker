@@ -262,3 +262,70 @@ if st.button("🚀 Find Best Station (Ranked by Savings)", use_container_width=T
         hide_index=True,
         use_container_width=True,
     )
+
+    # --- FILTERS (applied after results are calculated) ---
+    st.markdown("---")
+    st.markdown("### 🔍 Filter Results")
+
+    all_brands = sorted(df["Brand"].dropna().unique().tolist())
+
+    f_col1, f_col2 = st.columns(2)
+    with f_col1:
+        min_savings = st.number_input(
+            "Min Net Savings ($)", min_value=0.0, value=0.0, step=0.50,
+            help="Only show stations that save at least this much vs the worst option"
+        )
+        max_detour = st.slider(
+            "Max Detour (km)", min_value=0, max_value=50,
+            value=int(df["Detour (km)"].max()) + 1,
+            help="Hide stations that require more than this detour"
+        )
+    with f_col2:
+        on_route_only = st.checkbox(
+            "✅ On-Route only (≤ 3 km detour)",
+            value=False,
+            help="Only show stations with a detour of 3 km or less"
+        )
+        selected_brands = st.multiselect(
+            "Brand", options=all_brands, default=all_brands,
+            help="Uncheck brands you want to exclude"
+        )
+
+    # Apply filters to the numeric df (before formatting)
+    mask = (
+        (df["Net Savings"]  >= min_savings) &
+        (df["Detour (km)"] <= max_detour) &
+        (df["Brand"].isin(selected_brands))
+    )
+    if on_route_only:
+        mask &= (df["Detour (km)"] <= 3.0)
+
+    df_filtered = df[mask].copy()
+
+    if df_filtered.empty:
+        st.warning("No stations match your filters. Try relaxing them.")
+    else:
+        # Re-format filtered subset
+        df_show = df_filtered.copy()
+        df_show["Net Savings"] = df_show["Net Savings"].map("${:.2f}".format)
+        df_show["Total Cost"]  = df_show["Total Cost"].map("${:.2f}".format)
+        df_show["Fill Cost"]   = df_show["Fill Cost"].map("${:.2f}".format)
+        df_show["Listed $/L"]  = df_show["Listed $/L"].map("${:.3f}".format)
+        df_show["Eff $/L"]     = df_show["Eff $/L"].map("${:.3f}".format)
+
+        st.caption(f"Showing **{len(df_filtered)}** of {len(df)} stations")
+
+        st.dataframe(
+            df_show[[
+                "Station", "Brand", "On-Route", "Listed $/L", "Eff $/L",
+                "To Station", "To Dest", "Detour (km)",
+                "Fill Cost", "Net Savings", "Total Cost", "Navigate"
+            ]],
+            column_config={
+                "Navigate":   st.column_config.LinkColumn("🗺️ Navigate", display_text="Waze"),
+                "To Station": st.column_config.NumberColumn("To Station (km)"),
+                "To Dest":    st.column_config.NumberColumn("To Dest (km)"),
+            },
+            hide_index=True,
+            use_container_width=True,
+        )
