@@ -86,10 +86,14 @@ def get_nsw_access_token():
     r = requests.post(
         "https://api.onegov.nsw.gov.au/oauth/client_credential/accesstoken",
         params={"grant_type": "client_credentials"},
-        headers={"Authorization": NSW_AUTH_HEADER},
+        headers={
+            "Authorization": NSW_AUTH_HEADER,
+            "Content-Type":  "application/x-www-form-urlencoded",
+        },
         timeout=10,
     )
-    r.raise_for_status()
+    if not r.ok or not r.text.strip():
+        raise Exception(f"Token request failed — HTTP {r.status_code}: {r.text[:300]}")
     return r.json()["access_token"]
 
 def fetch_nsw_fuel_prices(lat, lon, radius_km=10, fuel_type="E10"):
