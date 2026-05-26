@@ -279,9 +279,9 @@ if st.button("🚀 Find Best Station (Ranked by Savings)", use_container_width=T
 
     st.dataframe(
         df_display[[
-            "Station", "Brand", "On-Route", "Listed $/L", "Eff $/L",
+            "Station", "Brand", "On-Route", "Net Savings", "Listed $/L", "Eff $/L",
             "To Station", "To Dest", "Detour (km)",
-            "Fill Cost", "Net Savings", "Total Cost", "Navigate"
+            "Fill Cost", "Total Cost", "Navigate"
         ]],
         column_config={
             "Navigate": st.column_config.LinkColumn("🗺️ Navigate", display_text="Waze"),
@@ -346,9 +346,9 @@ if st.button("🚀 Find Best Station (Ranked by Savings)", use_container_width=T
 
         st.dataframe(
             df_show[[
-                "Station", "Brand", "On-Route", "Listed $/L", "Eff $/L",
+                "Station", "Brand", "On-Route", "Net Savings", "Listed $/L", "Eff $/L",
                 "To Station", "To Dest", "Detour (km)",
-                "Fill Cost", "Net Savings", "Total Cost", "Navigate"
+                "Fill Cost", "Total Cost", "Navigate"
             ]],
             column_config={
                 "Navigate":   st.column_config.LinkColumn("🗺️ Navigate", display_text="Waze"),
