@@ -112,16 +112,17 @@ def fetch_nsw_fuel_prices(lat, lon, radius_km=10, fuel_type="E10"):
         "requesttimestamp": "01/01/2024 00:00:00 AM",
     }
     payload = {
-        "fueltype":       fuel_type,
-        "namedlocation":  f"{lat},{lon}",
-        "radius":         str(radius_km),
-        "sortby":         "price",
-        "resultsperpage": "25",
-        "page":           "1",
+        "FuelType":  fuel_type,
+        "Latitude":  lat,
+        "Longitude": lon,
+        "Radius":    radius_km,
+        "SortBy":    "Price",
     }
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=10)
-        r.raise_for_status()
+        if not r.ok:
+            st.error(f"NSW Fuel API error: {r.status_code} — {r.text[:300]}")
+            return []
         data = r.json()
         stations = []
         for s in data.get("stations", []):
