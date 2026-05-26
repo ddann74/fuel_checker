@@ -82,24 +82,25 @@ def get_tomtom_distance_km(o_lat, o_lon, d_lat, d_lon):
         return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)) * 1.3
 
 def fetch_nsw_fuel_prices(lat, lon, radius_km=10, fuel_type="E10"):
-    """Fetch live prices from NSW FuelCheck API."""
-    url = "https://api.nsw.gov.au/v1/fuel/lovs/stations/near"
+    """Fetch live prices from NSW FuelCheck API — POST /fuelpricecheck/v1/fuel/prices/nearby"""
+    url = "https://api.nsw.gov.au/fuelpricecheck/v1/fuel/prices/nearby"
     headers = {
         "Authorization": NSW_AUTH_HEADER,
-        "apikey": NSW_API_KEY,
-        "Content-Type": "application/json; charset=utf-8",
+        "apikey":        NSW_API_KEY,
+        "Content-Type":  "application/json; charset=utf-8",
         "transactionid": "1",
         "requesttimestamp": "01/01/2024 00:00:00 AM",
     }
-    params = {
-        "lat": lat,
-        "lng": lon,
-        "radius": radius_km,
-        "fueltype": fuel_type,
-        "maxresults": 25,
+    payload = {
+        "fueltype":       fuel_type,
+        "namedlocation":  f"{lat},{lon}",
+        "radius":         str(radius_km),
+        "sortby":         "price",
+        "resultsperpage": "25",
+        "page":           "1",
     }
     try:
-        r = requests.get(url, headers=headers, params=params, timeout=10)
+        r = requests.post(url, headers=headers, json=payload, timeout=10)
         r.raise_for_status()
         data = r.json()
         stations = []
