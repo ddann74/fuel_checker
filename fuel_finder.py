@@ -92,8 +92,12 @@ def get_nsw_access_token():
         },
         timeout=10,
     )
-    if not r.ok or not r.text.strip():
+    if not r.ok:
         raise Exception(f"Token request failed — HTTP {r.status_code}: {r.text[:300]}")
+    # Show raw response in sidebar for debugging
+    st.sidebar.code(f"Token response ({r.status_code}):\n{r.text[:500]}", language="text")
+    if not r.text.strip():
+        raise Exception(f"Token request returned HTTP 200 but empty body. Headers: {dict(r.headers)}")
     return r.json()["access_token"]
 
 def fetch_nsw_fuel_prices(lat, lon, radius_km=10, fuel_type="E10"):
