@@ -81,14 +81,31 @@ def get_tomtom_distance_km(o_lat, o_lon, d_lat, d_lon):
         a = math.sin(dlat/2)**2 + math.cos(math.radians(o_lat)) * math.cos(math.radians(d_lat)) * math.sin(dlon/2)**2
         return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)) * 1.3
 
+def get_nsw_access_token():
+    """Exchange API key+secret for a short-lived OAuth bearer token."""
+    r = requests.post(
+        "https://api.onegov.nsw.gov.au/oauth/client_credential/accesstoken",
+        params={"grant_type": "client_credentials"},
+        headers={"Authorization": NSW_AUTH_HEADER},
+        timeout=10,
+    )
+    r.raise_for_status()
+    return r.json()["access_token"]
+
 def fetch_nsw_fuel_prices(lat, lon, radius_km=10, fuel_type="E10"):
-    """Fetch live prices from NSW FuelCheck API — POST /fuelpricecheck/v1/fuel/prices/nearby"""
-    url = "https://api.nsw.gov.au/fuelpricecheck/v1/fuel/prices/nearby"
+    """Fetch live prices from NSW FuelCheck API."""
+    try:
+        token = get_nsw_access_token()
+    except Exception as e:
+        st.error(f"NSW Auth error: {e}")
+        return []
+
+    url = "https://api.onegov.nsw.gov.au/FuelPriceCheck/v1/fuel/prices/nearby"
     headers = {
-        "Authorization": NSW_AUTH_HEADER,
-        "apikey":        NSW_API_KEY,
-        "Content-Type":  "application/json; charset=utf-8",
-        "transactionid": "1",
+        "Authorization":    f"Bearer {token}",
+        "apikey":           NSW_API_KEY,
+        "Content-Type":     "application/json; charset=utf-8",
+        "transactionid":    "1",
         "requesttimestamp": "01/01/2024 00:00:00 AM",
     }
     payload = {
@@ -109,11 +126,11 @@ def fetch_nsw_fuel_prices(lat, lon, radius_km=10, fuel_type="E10"):
             if not price_cents:
                 continue
             stations.append({
-                "Station":   s.get("Name") or s.get("name", "Unknown"),
-                "Brand":     s.get("Brand") or s.get("brand", ""),
+                "Station":   s.get("Name")    or s.get("name",    "Unknown"),
+                "Brand":     s.get("Brand")   or s.get("brand",   ""),
                 "Price":     float(price_cents) / 100.0,
-                "Latitude":  float(s.get("Lat") or s.get("lat", lat)),
-                "Longitude": float(s.get("Lng") or s.get("lng", lon)),
+                "Latitude":  float(s.get("Lat") or s.get("lat",  lat)),
+                "Longitude": float(s.get("Lng") or s.get("lng",  lon)),
                 "Address":   s.get("Address") or s.get("address", ""),
             })
         return stations
