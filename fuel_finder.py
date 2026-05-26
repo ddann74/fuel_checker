@@ -82,22 +82,17 @@ def get_tomtom_distance_km(o_lat, o_lon, d_lat, d_lon):
         return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)) * 1.3
 
 def get_nsw_access_token():
-    """Exchange API key+secret for a short-lived OAuth bearer token."""
-    r = requests.post(
+    """Exchange API key+secret for a short-lived OAuth bearer token (GET with query param)."""
+    r = requests.get(
         "https://api.onegov.nsw.gov.au/oauth/client_credential/accesstoken",
         params={"grant_type": "client_credentials"},
-        headers={
-            "Authorization": NSW_AUTH_HEADER,
-            "Content-Type":  "application/x-www-form-urlencoded",
-        },
+        headers={"Authorization": NSW_AUTH_HEADER},
         timeout=10,
     )
     if not r.ok:
         raise Exception(f"Token request failed — HTTP {r.status_code}: {r.text[:300]}")
-    # Show raw response in sidebar for debugging
-    st.sidebar.code(f"Token response ({r.status_code}):\n{r.text[:500]}", language="text")
     if not r.text.strip():
-        raise Exception(f"Token request returned HTTP 200 but empty body. Headers: {dict(r.headers)}")
+        raise Exception(f"Empty token response. Headers: {dict(r.headers)}")
     return r.json()["access_token"]
 
 def fetch_nsw_fuel_prices(lat, lon, radius_km=10, fuel_type="E10"):
