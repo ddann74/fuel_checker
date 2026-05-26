@@ -124,19 +124,26 @@ def fetch_nsw_fuel_prices(lat, lon, radius_km=10, fuel_type="E10"):
             st.error(f"NSW Fuel API error: {r.status_code} — {r.text[:300]}")
             return []
         data = r.json()
-        st.sidebar.code(f"Fuel API keys: {list(data.keys())}\n\nFirst station: {data.get('stations', [{}])[0]}\n\nFirst price entry: {data.get('prices', data.get('Prices', [{}]))[0] if data.get('prices') or data.get('Prices') else 'no prices key'}", language="text")
+        # Build a lookup: stationcode -> price (already in $/L, e.g. 189.9 = $1.899)
+        price_lookup = {
+            p["stationcode"]: float(p["price"]) / 100.0
+            for p in data.get("prices", [])
+            if p.get("price") is not None
+        }
         stations = []
         for s in data.get("stations", []):
-            price_cents = s.get("Price") or s.get("price")
-            if not price_cents:
+            code = s.get("code")
+            price = price_lookup.get(code)
+            if price is None:
                 continue
+            loc = s.get("location", {})
             stations.append({
-                "Station":   s.get("Name")    or s.get("name",    "Unknown"),
-                "Brand":     s.get("Brand")   or s.get("brand",   ""),
-                "Price":     float(price_cents) / 100.0,
-                "Latitude":  float(s.get("Lat") or s.get("lat",  lat)),
-                "Longitude": float(s.get("Lng") or s.get("lng",  lon)),
-                "Address":   s.get("Address") or s.get("address", ""),
+                "Station":   s.get("name",    "Unknown"),
+                "Brand":     s.get("brand",   ""),
+                "Price":     price,
+                "Latitude":  float(loc.get("latitude",  lat)),
+                "Longitude": float(loc.get("longitude", lon)),
+                "Address":   s.get("address", ""),
             })
         return stations
     except Exception as e:
